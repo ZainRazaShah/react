@@ -6,17 +6,17 @@
  */
 'use strict';
 
-const babylon = require('babylon');
+const babelParser = require('@babel/parser');
 const fs = require('fs');
 const through = require('through2');
 const traverse = require('@babel/traverse').default;
 const gs = require('glob-stream');
 
-const evalToString = require('../shared/evalToString');
+const {evalStringConcat} = require('../shared/evalToString');
 
-const babylonOptions = {
+const parserOptions = {
   sourceType: 'module',
-  // As a parser, babylon has its own options and we can't directly
+  // babelParser has its own options and we can't directly
   // import/require a babel preset. It should be kept **the same** as
   // the `babel-plugin-syntax-*` ones specified in
   // https://github.com/facebook/fbjs/blob/master/packages/babel-preset-fbjs/configure.js
@@ -40,7 +40,7 @@ function transform(file, enc, cb) {
 
     let ast;
     try {
-      ast = babylon.parse(source, babylonOptions);
+      ast = babelParser.parse(source, parserOptions);
     } catch (error) {
       console.error('Failed to parse source file:', file.path);
       throw error;
@@ -64,15 +64,13 @@ function transform(file, enc, cb) {
             // warning messages can be concatenated (`+`) at runtime, so here's
             // a trivial partial evaluator that interprets the literal value
             try {
-              const warningMsgLiteral = evalToString(node.arguments[0]);
+              const warningMsgLiteral = evalStringConcat(node.arguments[0]);
               warnings.add(JSON.stringify(warningMsgLiteral));
             } catch (error) {
-              console.error(
-                'Failed to extract warning message from',
-                file.path
-              );
-              console.error(astPath.node.loc);
-              throw error;
+              // Silently skip over this call. We have a lint rule to enforce
+              // that all calls are extractable, so if this one fails, assume
+              // it's intentional.
+              return;
             }
           }
         },
@@ -90,6 +88,7 @@ gs([
   '!packages/react-devtools*/**/*.js',
   '!**/__tests__/**/*.js',
   '!**/__mocks__/**/*.js',
+  '!**/node_modules/**/*.js',
 ]).pipe(
   through.obj(transform, cb => {
     process.stdout.write(

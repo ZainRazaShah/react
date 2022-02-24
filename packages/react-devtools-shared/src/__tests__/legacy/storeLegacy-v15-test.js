@@ -63,7 +63,9 @@ describe('Store (legacy)', () => {
       );
       const Parent = ({count}) => (
         <div>
-          {new Array(count).fill(true).map((_, index) => <Child key={index} />)}
+          {new Array(count).fill(true).map((_, index) => (
+            <Child key={index} />
+          ))}
         </div>
       );
       const Child = () => <div>Hi!</div>;
@@ -83,7 +85,9 @@ describe('Store (legacy)', () => {
     it('should support mount and update operations for multiple roots', () => {
       const Parent = ({count}) => (
         <div>
-          {new Array(count).fill(true).map((_, index) => <Child key={index} />)}
+          {new Array(count).fill(true).map((_, index) => (
+            <Child key={index} />
+          ))}
         </div>
       );
       const Child = () => <div>Hi!</div>;
@@ -155,7 +159,9 @@ describe('Store (legacy)', () => {
       );
       const Parent = ({count}) => (
         <div>
-          {new Array(count).fill(true).map((_, index) => <Child key={index} />)}
+          {new Array(count).fill(true).map((_, index) => (
+            <Child key={index} />
+          ))}
         </div>
       );
       const Child = () => <div>Hi!</div>;
@@ -261,7 +267,9 @@ describe('Store (legacy)', () => {
     it('should support mount and update operations', () => {
       const Parent = ({count}) => (
         <div>
-          {new Array(count).fill(true).map((_, index) => <Child key={index} />)}
+          {new Array(count).fill(true).map((_, index) => (
+            <Child key={index} />
+          ))}
         </div>
       );
       const Child = () => <div>Hi!</div>;
@@ -297,7 +305,9 @@ describe('Store (legacy)', () => {
     it('should support mount and update operations for multiple roots', () => {
       const Parent = ({count}) => (
         <div>
-          {new Array(count).fill(true).map((_, index) => <Child key={index} />)}
+          {new Array(count).fill(true).map((_, index) => (
+            <Child key={index} />
+          ))}
         </div>
       );
       const Child = () => <div>Hi!</div>;
@@ -375,7 +385,9 @@ describe('Store (legacy)', () => {
       );
       const Parent = ({count}) => (
         <div>
-          {new Array(count).fill(true).map((_, index) => <Child key={index} />)}
+          {new Array(count).fill(true).map((_, index) => (
+            <Child key={index} />
+          ))}
         </div>
       );
       const Child = () => <div>Hi!</div>;
@@ -495,6 +507,17 @@ describe('Store (legacy)', () => {
 
       act(() => store.toggleIsCollapsed(store.getElementIDAtIndex(0), true));
       expect(store).toMatchSnapshot('5: collapse root');
+    });
+  });
+
+  describe('StrictMode compliance', () => {
+    it('should mark all elements as strict mode compliant', () => {
+      const App = () => null;
+
+      const container = document.createElement('div');
+      act(() => ReactDOM.render(<App />, container));
+
+      expect(store.getElementAtIndex(0).isStrictModeNonCompliant).toBe(false);
     });
   });
 });

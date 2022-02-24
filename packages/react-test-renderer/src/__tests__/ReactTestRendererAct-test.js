@@ -13,16 +13,18 @@ describe('ReactTestRenderer.act()', () => {
     Scheduler = require('scheduler');
     act = ReactTestRenderer.act;
   });
+
+  // @gate __DEV__
   it('can use .act() to flush effects', () => {
     function App(props) {
-      let [ctr, setCtr] = React.useState(0);
+      const [ctr, setCtr] = React.useState(0);
       React.useEffect(() => {
         props.callback();
         setCtr(1);
       }, []);
       return ctr;
     }
-    let calledLog = [];
+    const calledLog = [];
     let root;
     act(() => {
       root = ReactTestRenderer.create(
@@ -38,24 +40,8 @@ describe('ReactTestRenderer.act()', () => {
     expect(root.toJSON()).toEqual('1');
   });
 
-  it("warns if you don't use .act", () => {
-    let setCtr;
-    function App(props) {
-      let [ctr, _setCtr] = React.useState(0);
-      setCtr = _setCtr;
-      return ctr;
-    }
-
-    ReactTestRenderer.create(<App />);
-
-    expect(() => {
-      setCtr(1);
-    }).toErrorDev([
-      'An update to App inside a test was not wrapped in act(...)',
-    ]);
-  });
-
   describe('async', () => {
+    // @gate __DEV__
     it('should work with async/await', async () => {
       function fetch(url) {
         return Promise.resolve({
@@ -63,7 +49,7 @@ describe('ReactTestRenderer.act()', () => {
         });
       }
       function App() {
-        let [details, setDetails] = React.useState(0);
+        const [details, setDetails] = React.useState(0);
 
         React.useEffect(() => {
           async function fetchDetails() {
@@ -83,6 +69,7 @@ describe('ReactTestRenderer.act()', () => {
       expect(root.toJSON()).toEqual(['1', '2', '3']);
     });
 
+    // @gate __DEV__
     it('should not flush effects without also flushing microtasks', async () => {
       const {useEffect, useReducer} = React;
 

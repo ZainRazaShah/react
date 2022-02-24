@@ -6,7 +6,8 @@
  *
  * @flow
  */
-import React, {
+import * as React from 'react';
+import {
   Fragment,
   useCallback,
   useContext,
@@ -15,8 +16,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import Tooltip from '@reach/tooltip';
-import {Menu, MenuList, MenuButton, MenuItem} from '@reach/menu-button';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import Toggle from '../Toggle';
@@ -25,17 +24,24 @@ import {OwnersListContext} from './OwnersListContext';
 import {TreeDispatcherContext, TreeStateContext} from './TreeContext';
 import {useIsOverflowing} from '../hooks';
 import {StoreContext} from '../context';
+import Tooltip from '../Components/reach-ui/tooltip';
+import {
+  Menu,
+  MenuList,
+  MenuButton,
+  MenuItem,
+} from '../Components/reach-ui/menu-button';
 
-import type {Owner} from './types';
+import type {SerializedElement} from './types';
 
 import styles from './OwnersStack.css';
 
-type SelectOwner = (owner: Owner | null) => void;
+type SelectOwner = (owner: SerializedElement | null) => void;
 
 type ACTION_UPDATE_OWNER_ID = {|
   type: 'UPDATE_OWNER_ID',
   ownerID: number | null,
-  owners: Array<Owner>,
+  owners: Array<SerializedElement>,
 |};
 type ACTION_UPDATE_SELECTED_INDEX = {|
   type: 'UPDATE_SELECTED_INDEX',
@@ -46,7 +52,7 @@ type Action = ACTION_UPDATE_OWNER_ID | ACTION_UPDATE_SELECTED_INDEX;
 
 type State = {|
   ownerID: number | null,
-  owners: Array<Owner>,
+  owners: Array<SerializedElement>,
   selectedIndex: number,
 |};
 
@@ -76,7 +82,7 @@ export default function OwnerStack() {
   const {ownerID} = useContext(TreeStateContext);
   const treeDispatch = useContext(TreeDispatcherContext);
 
-  const [state, dispatch] = useReducer<State, Action>(dialogReducer, {
+  const [state, dispatch] = useReducer<State, State, Action>(dialogReducer, {
     ownerID: null,
     owners: [],
     selectedIndex: 0,
@@ -103,7 +109,7 @@ export default function OwnerStack() {
   const {owners, selectedIndex} = state;
 
   const selectOwner = useCallback<SelectOwner>(
-    (owner: Owner | null) => {
+    (owner: SerializedElement | null) => {
       if (owner !== null) {
         const index = owners.indexOf(owner);
         dispatch({
@@ -128,30 +134,27 @@ export default function OwnerStack() {
 
   const selectedOwner = owners[selectedIndex];
 
-  useLayoutEffect(
-    () => {
-      // If we're already overflowing, then we don't need to re-measure items.
-      // That's because once the owners stack is open, it can only get larger (by driling in).
-      // A totally new stack can only be reached by exiting this mode and re-entering it.
-      if (elementsBarRef.current === null || isOverflowing) {
-        return () => {};
-      }
+  useLayoutEffect(() => {
+    // If we're already overflowing, then we don't need to re-measure items.
+    // That's because once the owners stack is open, it can only get larger (by drilling in).
+    // A totally new stack can only be reached by exiting this mode and re-entering it.
+    if (elementsBarRef.current === null || isOverflowing) {
+      return () => {};
+    }
 
-      let totalWidth = 0;
-      for (let i = 0; i < owners.length; i++) {
-        const element = elementsBarRef.current.children[i];
-        const computedStyle = getComputedStyle(element);
+    let totalWidth = 0;
+    for (let i = 0; i < owners.length; i++) {
+      const element = elementsBarRef.current.children[i];
+      const computedStyle = getComputedStyle(element);
 
-        totalWidth +=
-          element.offsetWidth +
-          parseInt(computedStyle.marginLeft, 10) +
-          parseInt(computedStyle.marginRight, 10);
-      }
+      totalWidth +=
+        element.offsetWidth +
+        parseInt(computedStyle.marginLeft, 10) +
+        parseInt(computedStyle.marginRight, 10);
+    }
 
-      setElementsTotalWidth(totalWidth);
-    },
-    [elementsBarRef, isOverflowing, owners.length],
-  );
+    setElementsTotalWidth(totalWidth);
+  }, [elementsBarRef, isOverflowing, owners.length]);
 
   return (
     <div className={styles.OwnerStack}>
@@ -199,9 +202,10 @@ export default function OwnerStack() {
 }
 
 type ElementsDropdownProps = {
-  owners: Array<Owner>,
+  owners: Array<SerializedElement>,
   selectedIndex: number,
   selectOwner: SelectOwner,
+  ...
 };
 function ElementsDropdown({
   owners,
@@ -246,8 +250,9 @@ function ElementsDropdown({
 
 type ElementViewProps = {
   isSelected: boolean,
-  owner: Owner,
+  owner: SerializedElement,
   selectOwner: SelectOwner,
+  ...
 };
 function ElementView({isSelected, owner, selectOwner}: ElementViewProps) {
   const store = useContext(StoreContext);
@@ -255,14 +260,11 @@ function ElementView({isSelected, owner, selectOwner}: ElementViewProps) {
   const {displayName, hocDisplayNames, type} = owner;
   const isInStore = store.containsElement(owner.id);
 
-  const handleChange = useCallback(
-    () => {
-      if (isInStore) {
-        selectOwner(owner);
-      }
-    },
-    [isInStore, selectOwner, owner],
-  );
+  const handleChange = useCallback(() => {
+    if (isInStore) {
+      selectOwner(owner);
+    }
+  }, [isInStore, selectOwner, owner]);
 
   return (
     <Toggle
@@ -281,7 +283,7 @@ function ElementView({isSelected, owner, selectOwner}: ElementViewProps) {
 }
 
 type BackToOwnerButtonProps = {|
-  owners: Array<Owner>,
+  owners: Array<SerializedElement>,
   selectedIndex: number,
   selectOwner: SelectOwner,
 |};

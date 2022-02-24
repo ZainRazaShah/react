@@ -10,6 +10,7 @@
 import escapeStringRegExp from 'escape-string-regexp';
 import {meta} from '../../hydration';
 import {formatDataForPreview} from '../../utils';
+import isArray from 'react-devtools-shared/src/isArray';
 
 import type {HooksTree} from 'react-debug-tools/src/ReactDebugHooks';
 
@@ -19,8 +20,8 @@ export function alphaSortEntries(
 ): number {
   const a = entryA[0];
   const b = entryB[0];
-  if ('' + +a === a) {
-    if ('' + +b !== b) {
+  if (String(+a) === a) {
+    if (String(+b) !== b) {
       return -1;
     }
     return +a < +b ? -1 : 1;
@@ -93,7 +94,7 @@ export function createRegExp(string: string): RegExp {
 }
 
 export function getMetaValueLabel(data: Object): string | null {
-  if (data.hasOwnProperty(meta.preview_long)) {
+  if (hasOwnProperty.call(data, meta.preview_long)) {
     return data[meta.preview_long];
   } else {
     return formatDataForPreview(data, true);
@@ -107,7 +108,7 @@ function sanitize(data: Object): void {
     if (value && value[meta.type]) {
       data[key] = getMetaValueLabel(value);
     } else if (value != null) {
-      if (Array.isArray(value)) {
+      if (isArray(value)) {
         sanitize(value);
       } else if (typeof value === 'object') {
         sanitize(value);

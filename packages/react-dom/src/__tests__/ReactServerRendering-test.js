@@ -14,10 +14,8 @@ let React;
 let ReactDOMServer;
 let PropTypes;
 let ReactCurrentDispatcher;
-
-function normalizeCodeLocInfo(str) {
-  return str && str.replace(/\(at .+?:\d+\)/g, '(at **)');
-}
+const enableSuspenseServerRenderer = require('shared/ReactFeatureFlags')
+  .enableSuspenseServerRenderer;
 
 describe('ReactDOMServer', () => {
   beforeEach(() => {
@@ -33,14 +31,12 @@ describe('ReactDOMServer', () => {
   describe('renderToString', () => {
     it('should generate simple markup', () => {
       const response = ReactDOMServer.renderToString(<span>hello world</span>);
-      expect(response).toMatch(
-        new RegExp('<span data-reactroot=""' + '>hello world</span>'),
-      );
+      expect(response).toMatch(new RegExp('<span' + '>hello world</span>'));
     });
 
     it('should generate simple markup for self-closing tags', () => {
       const response = ReactDOMServer.renderToString(<img />);
-      expect(response).toMatch(new RegExp('<img data-reactroot=""' + '/>'));
+      expect(response).toMatch(new RegExp('<img' + '/>'));
     });
 
     it('should generate comment markup for component returns null', () => {
@@ -76,10 +72,7 @@ describe('ReactDOMServer', () => {
       const response = ReactDOMServer.renderToString(<Parent />);
       expect(response).toMatch(
         new RegExp(
-          '<div ' +
-            'data-reactroot' +
-            '=""' +
-            '>' +
+          '<div>' +
             '<span' +
             '>' +
             'My name is <!-- -->child' +
@@ -138,12 +131,7 @@ describe('ReactDOMServer', () => {
 
         expect(response).toMatch(
           new RegExp(
-            '<span ' +
-              'data-reactroot' +
-              '=""' +
-              '>' +
-              'Component name: <!-- -->TestComponent' +
-              '</span>',
+            '<span>' + 'Component name: <!-- -->TestComponent' + '</span>',
           ),
         );
         expect(lifecycle).toEqual([
@@ -165,17 +153,11 @@ describe('ReactDOMServer', () => {
     });
 
     it('should throw prop mapping error for an <iframe /> with invalid props', () => {
-      let caughtErr;
-      try {
+      expect(() => {
         ReactDOMServer.renderToString(<iframe style="border:none;" />);
-      } catch (err) {
-        caughtErr = err;
-      }
-      expect(caughtErr).not.toBe(undefined);
-      expect(normalizeCodeLocInfo(caughtErr.message)).toContain(
+      }).toThrowError(
         'The `style` prop expects a mapping from style properties to values, not ' +
-          "a string. For example, style={{marginRight: spacing + 'em'}} when using JSX." +
-          (__DEV__ ? '\n    in iframe (at **)' : ''),
+          "a string. For example, style={{marginRight: spacing + 'em'}} when using JSX.",
       );
     });
 
@@ -588,9 +570,7 @@ describe('ReactDOMServer', () => {
     it('should generate simple markup', () => {
       const SuccessfulElement = React.createElement(() => <img />);
       const response = ReactDOMServer.renderToNodeStream(SuccessfulElement);
-      expect(response.read().toString()).toMatch(
-        new RegExp('<img data-reactroot=""' + '/>'),
-      );
+      expect(response.read().toString()).toMatch(new RegExp('<img' + '/>'));
     });
 
     it('should handle errors correctly', () => {
@@ -644,7 +624,9 @@ describe('ReactDOMServer', () => {
     }
 
     ReactDOMServer.renderToString(<Foo />);
-    expect(() => jest.runOnlyPendingTimers()).toErrorDev(
+    expect(() =>
+      jest.runOnlyPendingTimers(),
+    ).toErrorDev(
       'Warning: setState(...): Can only update a mounting component.' +
         ' This usually means you called setState() outside componentWillMount() on the server.' +
         ' This is a no-op.\n\nPlease check the code for the Foo component.',
@@ -672,7 +654,9 @@ describe('ReactDOMServer', () => {
     }
 
     ReactDOMServer.renderToString(<Baz />);
-    expect(() => jest.runOnlyPendingTimers()).toErrorDev(
+    expect(() =>
+      jest.runOnlyPendingTimers(),
+    ).toErrorDev(
       'Warning: forceUpdate(...): Can only update a mounting component. ' +
         'This usually means you called forceUpdate() outside componentWillMount() on the server. ' +
         'This is a no-op.\n\nPlease check the code for the Baz component.',
@@ -682,7 +666,7 @@ describe('ReactDOMServer', () => {
     expect(markup).toBe('<div></div>');
   });
 
-  if (!__EXPERIMENTAL__) {
+  if (!enableSuspenseServerRenderer) {
     it('throws for unsupported types on the server', () => {
       expect(() => {
         ReactDOMServer.renderToString(<React.Suspense />);
@@ -703,7 +687,7 @@ describe('ReactDOMServer', () => {
           ),
         );
         ReactDOMServer.renderToString(<LazyFoo />);
-      }).toThrow('ReactDOMServer does not yet support lazy-loaded components.');
+      }).toThrow('ReactDOMServer does not yet support Suspense.');
     });
 
     it('throws when suspending on the server', () => {
@@ -1112,5 +1096,44 @@ describe('ReactDOMServer', () => {
         'contextType should point to the Context object returned by React.createContext(). ' +
         'However, it is set to a string.',
     );
+  });
+
+  describe('custom element server rendering', () => {
+    it('String properties should be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo="bar" />,
+      );
+      expect(output).toBe(`<my-custom-element foo="bar"></my-custom-element>`);
+    });
+
+    it('Number properties should be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={5} />,
+      );
+      expect(output).toBe(`<my-custom-element foo="5"></my-custom-element>`);
+    });
+
+    // @gate enableCustomElementPropertySupport
+    it('Object properties should not be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={{foo: 'bar'}} />,
+      );
+      expect(output).toBe(`<my-custom-element></my-custom-element>`);
+    });
+
+    // @gate enableCustomElementPropertySupport
+    it('Array properties should not be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={['foo', 'bar']} />,
+      );
+      expect(output).toBe(`<my-custom-element></my-custom-element>`);
+    });
+
+    it('Function properties should not be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={() => console.log('bar')} />,
+      );
+      expect(output).toBe(`<my-custom-element></my-custom-element>`);
+    });
   });
 });

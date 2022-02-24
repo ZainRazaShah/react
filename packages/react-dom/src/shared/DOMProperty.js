@@ -7,7 +7,11 @@
  * @flow
  */
 
-import {enableDeprecatedFlareAPI} from 'shared/ReactFeatureFlags';
+import {
+  enableFilterEmptyStringAttributesDOM,
+  enableCustomElementPropertySupport,
+} from 'shared/ReactFeatureFlags';
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 type PropertyType = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -16,7 +20,7 @@ type PropertyType = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export const RESERVED = 0;
 
 // A simple string attribute.
-// Attributes that aren't in the whitelist are presumed to have this type.
+// Attributes that aren't in the filter are presumed to have this type.
 export const STRING = 1;
 
 // A string attribute that accepts booleans in React. In HTML, these are called
@@ -52,6 +56,7 @@ export type PropertyInfo = {|
   +propertyName: string,
   +type: PropertyType,
   +sanitizeURL: boolean,
+  +removeEmptyString: boolean,
 |};
 
 /* eslint-disable max-len */
@@ -61,13 +66,10 @@ export const ATTRIBUTE_NAME_START_CHAR =
 export const ATTRIBUTE_NAME_CHAR =
   ATTRIBUTE_NAME_START_CHAR + '\\-.0-9\\u00B7\\u0300-\\u036F\\u203F-\\u2040';
 
-export const ID_ATTRIBUTE_NAME = 'data-reactid';
-export const ROOT_ATTRIBUTE_NAME = 'data-reactroot';
 export const VALID_ATTRIBUTE_NAME_REGEX = new RegExp(
   '^[' + ATTRIBUTE_NAME_START_CHAR + '][' + ATTRIBUTE_NAME_CHAR + ']*$',
 );
 
-const hasOwnProperty = Object.prototype.hasOwnProperty;
 const illegalAttributeNameCache = {};
 const validatedAttributeNameCache = {};
 
@@ -163,6 +165,32 @@ export function shouldRemoveAttribute(
     return false;
   }
   if (propertyInfo !== null) {
+    if (enableFilterEmptyStringAttributesDOM) {
+      if (propertyInfo.removeEmptyString && value === '') {
+        if (__DEV__) {
+          if (name === 'src') {
+            console.error(
+              'An empty string ("") was passed to the %s attribute. ' +
+                'This may cause the browser to download the whole page again over the network. ' +
+                'To fix this, either do not render the element at all ' +
+                'or pass null to %s instead of an empty string.',
+              name,
+              name,
+            );
+          } else {
+            console.error(
+              'An empty string ("") was passed to the %s attribute. ' +
+                'To fix this, either do not render the element at all ' +
+                'or pass null to %s instead of an empty string.',
+              name,
+              name,
+            );
+          }
+        }
+        return true;
+      }
+    }
+
     switch (propertyInfo.type) {
       case BOOLEAN:
         return !value;
@@ -188,6 +216,7 @@ function PropertyInfoRecord(
   attributeName: string,
   attributeNamespace: string | null,
   sanitizeURL: boolean,
+  removeEmptyString: boolean,
 ) {
   this.acceptsBooleans =
     type === BOOLEANISH_STRING ||
@@ -199,6 +228,7 @@ function PropertyInfoRecord(
   this.propertyName = name;
   this.type = type;
   this.sanitizeURL = sanitizeURL;
+  this.removeEmptyString = removeEmptyString;
 }
 
 // When adding attributes to this list, be sure to also add them to
@@ -220,8 +250,8 @@ const reservedProps = [
   'suppressHydrationWarning',
   'style',
 ];
-if (enableDeprecatedFlareAPI) {
-  reservedProps.push('DEPRECATED_flareListeners');
+if (enableCustomElementPropertySupport) {
+  reservedProps.push('innerText', 'textContent');
 }
 
 reservedProps.forEach(name => {
@@ -232,6 +262,7 @@ reservedProps.forEach(name => {
     name, // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -250,6 +281,7 @@ reservedProps.forEach(name => {
     attributeName, // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -264,6 +296,7 @@ reservedProps.forEach(name => {
     name.toLowerCase(), // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -284,6 +317,7 @@ reservedProps.forEach(name => {
     name, // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -300,6 +334,7 @@ reservedProps.forEach(name => {
   'defer',
   'disabled',
   'disablePictureInPicture',
+  'disableRemotePlayback',
   'formNoValidate',
   'hidden',
   'loop',
@@ -322,6 +357,7 @@ reservedProps.forEach(name => {
     name.toLowerCase(), // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -346,6 +382,7 @@ reservedProps.forEach(name => {
     name, // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -366,6 +403,7 @@ reservedProps.forEach(name => {
     name, // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -387,6 +425,7 @@ reservedProps.forEach(name => {
     name, // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -399,6 +438,7 @@ reservedProps.forEach(name => {
     name.toLowerCase(), // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -407,9 +447,9 @@ const capitalize = token => token[1].toUpperCase();
 
 // This is a list of all SVG attributes that need special casing, namespacing,
 // or boolean value assignment. Regular attributes that just accept strings
-// and have the same names are omitted, just like in the HTML whitelist.
+// and have the same names are omitted, just like in the HTML attribute filter.
 // Some of these attributes can be hard to find. This list was created by
-// scrapping the MDN documentation.
+// scraping the MDN documentation.
 [
   'accent-height',
   'alignment-baseline',
@@ -497,6 +537,7 @@ const capitalize = token => token[1].toUpperCase();
     attributeName,
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -521,6 +562,7 @@ const capitalize = token => token[1].toUpperCase();
     attributeName,
     'http://www.w3.org/1999/xlink',
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -542,6 +584,7 @@ const capitalize = token => token[1].toUpperCase();
     attributeName,
     'http://www.w3.org/XML/1998/namespace',
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -556,6 +599,7 @@ const capitalize = token => token[1].toUpperCase();
     attributeName.toLowerCase(), // attributeName
     null, // attributeNamespace
     false, // sanitizeURL
+    false, // removeEmptyString
   );
 });
 
@@ -569,6 +613,7 @@ properties[xlinkHref] = new PropertyInfoRecord(
   'xlink:href',
   'http://www.w3.org/1999/xlink',
   true, // sanitizeURL
+  false, // removeEmptyString
 );
 
 ['src', 'href', 'action', 'formAction'].forEach(attributeName => {
@@ -579,5 +624,6 @@ properties[xlinkHref] = new PropertyInfoRecord(
     attributeName.toLowerCase(), // attributeName
     null, // attributeNamespace
     true, // sanitizeURL
+    true, // removeEmptyString
   );
 });

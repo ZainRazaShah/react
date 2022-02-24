@@ -13,6 +13,8 @@ let React = require('react');
 let ReactDOM = require('react-dom');
 let ReactDOMServer = require('react-dom/server');
 let Scheduler = require('scheduler');
+let act;
+let useEffect;
 
 describe('ReactDOMRoot', () => {
   let container;
@@ -24,20 +26,44 @@ describe('ReactDOMRoot', () => {
     ReactDOM = require('react-dom');
     ReactDOMServer = require('react-dom/server');
     Scheduler = require('scheduler');
+    act = require('jest-react').act;
+    useEffect = React.useEffect;
   });
-
-  if (!__EXPERIMENTAL__) {
-    it('createRoot is not exposed in stable build', () => {
-      expect(ReactDOM.createRoot).toBe(undefined);
-    });
-    return;
-  }
 
   it('renders children', () => {
     const root = ReactDOM.createRoot(container);
     root.render(<div>Hi</div>);
     Scheduler.unstable_flushAll();
     expect(container.textContent).toEqual('Hi');
+  });
+
+  it('warns if a callback parameter is provided to render', () => {
+    const callback = jest.fn();
+    const root = ReactDOM.createRoot(container);
+    expect(() =>
+      root.render(<div>Hi</div>, callback),
+    ).toErrorDev(
+      'render(...): does not support the second callback argument. ' +
+        'To execute a side effect after rendering, declare it in a component body with useEffect().',
+      {withoutStack: true},
+    );
+    Scheduler.unstable_flushAll();
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('warns if a callback parameter is provided to unmount', () => {
+    const callback = jest.fn();
+    const root = ReactDOM.createRoot(container);
+    root.render(<div>Hi</div>);
+    expect(() =>
+      root.unmount(callback),
+    ).toErrorDev(
+      'unmount(...): does not support a callback argument. ' +
+        'To execute a side effect after rendering, declare it in a component body with useEffect().',
+      {withoutStack: true},
+    );
+    Scheduler.unstable_flushAll();
+    expect(callback).not.toHaveBeenCalled();
   });
 
   it('unmounts children', () => {
@@ -72,11 +98,10 @@ describe('ReactDOMRoot', () => {
     );
     Scheduler.unstable_flushAll();
 
-    // Accepts `hydrate` option
     const container2 = document.createElement('div');
     container2.innerHTML = markup;
-    const root2 = ReactDOM.createRoot(container2, {hydrate: true});
-    root2.render(
+    ReactDOM.hydrateRoot(
+      container2,
       <div>
         <span />
       </div>,
@@ -84,7 +109,28 @@ describe('ReactDOMRoot', () => {
     expect(() => Scheduler.unstable_flushAll()).toErrorDev('Extra attributes');
   });
 
-  it('does not clear existing children', async () => {
+  it('clears existing children with legacy API', async () => {
+    container.innerHTML = '<div>a</div><div>b</div>';
+    ReactDOM.render(
+      <div>
+        <span>c</span>
+        <span>d</span>
+      </div>,
+      container,
+    );
+    expect(container.textContent).toEqual('cd');
+    ReactDOM.render(
+      <div>
+        <span>d</span>
+        <span>c</span>
+      </div>,
+      container,
+    );
+    Scheduler.unstable_flushAll();
+    expect(container.textContent).toEqual('dc');
+  });
+
+  it('clears existing children', async () => {
     container.innerHTML = '<div>a</div><div>b</div>';
     const root = ReactDOM.createRoot(container);
     root.render(
@@ -94,7 +140,7 @@ describe('ReactDOMRoot', () => {
       </div>,
     );
     Scheduler.unstable_flushAll();
-    expect(container.textContent).toEqual('abcd');
+    expect(container.textContent).toEqual('cd');
     root.render(
       <div>
         <span>d</span>
@@ -102,7 +148,7 @@ describe('ReactDOMRoot', () => {
       </div>,
     );
     Scheduler.unstable_flushAll();
-    expect(container.textContent).toEqual('abdc');
+    expect(container.textContent).toEqual('dc');
   });
 
   it('throws a good message on invalid containers', () => {
@@ -146,7 +192,7 @@ describe('ReactDOMRoot', () => {
         // We care about this warning:
         'You are calling ReactDOM.hydrate() on a container that was previously ' +
           'passed to ReactDOM.createRoot(). This is not supported. ' +
-          'Did you mean to call createRoot(container, {hydrate: true}).render(element)?',
+          'Did you mean to call hydrateRoot(container, element)?',
         // This is more of a symptom but restructuring the code to avoid it isn't worth it:
         'Replacing React-rendered children with a new root component.',
       ],
@@ -191,7 +237,14 @@ describe('ReactDOMRoot', () => {
     let unmounted = false;
     expect(() => {
       unmounted = ReactDOM.unmountComponentAtNode(container);
-    }).toErrorDev('Did you mean to call root.unmount()?', {withoutStack: true});
+    }).toErrorDev(
+      [
+        'Did you mean to call root.unmount()?',
+        // This is more of a symptom but restructuring the code to avoid it isn't worth it:
+        "The node you're attempting to unmount was rendered by React and is not a top-level container.",
+      ],
+      {withoutStack: true},
+    );
     expect(unmounted).toBe(false);
     Scheduler.unstable_flushAll();
     expect(container.textContent).toEqual('Hi');
@@ -228,5 +281,143 @@ describe('ReactDOMRoot', () => {
     root.unmount();
     Scheduler.unstable_flushAll();
     ReactDOM.createRoot(container); // No warning
+  });
+
+  it('warns if creating a root on the document.body', async () => {
+    expect(() => {
+      ReactDOM.createRoot(document.body);
+    }).toErrorDev(
+      'createRoot(): Creating roots directly with document.body is ' +
+        'discouraged, since its children are often manipulated by third-party ' +
+        'scripts and browser extensions. This may lead to subtle ' +
+        'reconciliation issues. Try using a container element created ' +
+        'for your app.',
+      {withoutStack: true},
+    );
+  });
+
+  it('warns if updating a root that has had its contents removed', async () => {
+    const root = ReactDOM.createRoot(container);
+    root.render(<div>Hi</div>);
+    Scheduler.unstable_flushAll();
+    container.innerHTML = '';
+
+    expect(() => {
+      root.render(<div>Hi</div>);
+    }).toErrorDev(
+      'render(...): It looks like the React-rendered content of the ' +
+        'root container was removed without using React. This is not ' +
+        'supported and will cause errors. Instead, call ' +
+        "root.unmount() to empty a root's container.",
+      {withoutStack: true},
+    );
+  });
+
+  it('opts-in to concurrent default updates', async () => {
+    const root = ReactDOM.createRoot(container, {
+      unstable_concurrentUpdatesByDefault: true,
+    });
+
+    function Foo({value}) {
+      Scheduler.unstable_yieldValue(value);
+      return <div>{value}</div>;
+    }
+
+    await act(async () => {
+      root.render(<Foo value="a" />);
+    });
+
+    expect(container.textContent).toEqual('a');
+
+    await act(async () => {
+      root.render(<Foo value="b" />);
+
+      expect(Scheduler).toHaveYielded(['a']);
+      expect(container.textContent).toEqual('a');
+
+      expect(Scheduler).toFlushAndYieldThrough(['b']);
+      if (gate(flags => flags.allowConcurrentByDefault)) {
+        expect(container.textContent).toEqual('a');
+      } else {
+        expect(container.textContent).toEqual('b');
+      }
+    });
+    expect(container.textContent).toEqual('b');
+  });
+
+  it('unmount is synchronous', async () => {
+    const root = ReactDOM.createRoot(container);
+    await act(async () => {
+      root.render('Hi');
+    });
+    expect(container.textContent).toEqual('Hi');
+
+    await act(async () => {
+      root.unmount();
+      // Should have already unmounted
+      expect(container.textContent).toEqual('');
+    });
+  });
+
+  it('throws if an unmounted root is updated', async () => {
+    const root = ReactDOM.createRoot(container);
+    await act(async () => {
+      root.render('Hi');
+    });
+    expect(container.textContent).toEqual('Hi');
+
+    root.unmount();
+
+    expect(() => root.render("I'm back")).toThrow(
+      'Cannot update an unmounted root.',
+    );
+  });
+
+  it('warns if root is unmounted inside an effect', async () => {
+    const container1 = document.createElement('div');
+    const root1 = ReactDOM.createRoot(container1);
+    const container2 = document.createElement('div');
+    const root2 = ReactDOM.createRoot(container2);
+
+    function App({step}) {
+      useEffect(() => {
+        if (step === 2) {
+          root2.unmount();
+        }
+      }, [step]);
+      return 'Hi';
+    }
+
+    await act(async () => {
+      root1.render(<App step={1} />);
+    });
+    expect(container1.textContent).toEqual('Hi');
+
+    expect(() => {
+      ReactDOM.flushSync(() => {
+        root1.render(<App step={2} />);
+      });
+    }).toErrorDev(
+      'Attempted to synchronously unmount a root while React was ' +
+        'already rendering.',
+    );
+  });
+
+  // @gate disableCommentsAsDOMContainers
+  it('errors if container is a comment node', () => {
+    // This is an old feature used by www. Disabled in the open source build.
+    const div = document.createElement('div');
+    div.innerHTML = '<!-- react-mount-point-unstable -->';
+    const commentNode = div.childNodes[0];
+
+    expect(() => ReactDOM.createRoot(commentNode)).toThrow(
+      'createRoot(...): Target container is not a DOM element.',
+    );
+    expect(() => ReactDOM.hydrateRoot(commentNode)).toThrow(
+      'hydrateRoot(...): Target container is not a DOM element.',
+    );
+
+    // Still works in the legacy API
+    ReactDOM.render(<div />, commentNode);
   });
 });

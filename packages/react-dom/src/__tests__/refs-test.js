@@ -156,29 +156,31 @@ describe('reactiverefs', () => {
   });
 });
 
-describe('factory components', () => {
-  it('Should correctly get the ref', () => {
-    function Comp() {
-      return {
-        render() {
-          return <div ref="elemRef" />;
-        },
-      };
-    }
+if (!require('shared/ReactFeatureFlags').disableModulePatternComponents) {
+  describe('factory components', () => {
+    it('Should correctly get the ref', () => {
+      function Comp() {
+        return {
+          render() {
+            return <div ref="elemRef" />;
+          },
+        };
+      }
 
-    let inst;
-    expect(
-      () => (inst = ReactTestUtils.renderIntoDocument(<Comp />)),
-    ).toErrorDev(
-      'Warning: The <Comp /> component appears to be a function component that returns a class instance. ' +
-        'Change Comp to a class that extends React.Component instead. ' +
-        "If you can't use a class try assigning the prototype on the function as a workaround. " +
-        '`Comp.prototype = React.Component.prototype`. ' +
-        "Don't use an arrow function since it cannot be called with `new` by React.",
-    );
-    expect(inst.refs.elemRef.tagName).toBe('DIV');
+      let inst;
+      expect(
+        () => (inst = ReactTestUtils.renderIntoDocument(<Comp />)),
+      ).toErrorDev(
+        'Warning: The <Comp /> component appears to be a function component that returns a class instance. ' +
+          'Change Comp to a class that extends React.Component instead. ' +
+          "If you can't use a class try assigning the prototype on the function as a workaround. " +
+          '`Comp.prototype = React.Component.prototype`. ' +
+          "Don't use an arrow function since it cannot be called with `new` by React.",
+      );
+      expect(inst.refs.elemRef.tagName).toBe('DIV');
+    });
   });
-});
+}
 
 /**
  * Tests that when a ref hops around children, we can track that correctly.
@@ -349,6 +351,35 @@ describe('ref swapping', () => {
       'Expected ref to be a function, a string, an object returned by React.createRef(), or null.',
     );
   });
+
+  it('should warn about callback refs returning a function', () => {
+    const container = document.createElement('div');
+    expect(() => {
+      ReactDOM.render(<div ref={() => () => {}} />, container);
+    }).toErrorDev('Unexpected return value from a callback ref in div');
+
+    // Cleanup should warn, too.
+    expect(() => {
+      ReactDOM.render(<span />, container);
+    }).toErrorDev('Unexpected return value from a callback ref in div', {
+      withoutStack: true,
+    });
+
+    // No warning when returning non-functions.
+    ReactDOM.render(<p ref={() => ({})} />, container);
+    ReactDOM.render(<p ref={() => null} />, container);
+    ReactDOM.render(<p ref={() => undefined} />, container);
+
+    // Still warns on functions (not deduped).
+    expect(() => {
+      ReactDOM.render(<div ref={() => () => {}} />, container);
+    }).toErrorDev('Unexpected return value from a callback ref in div');
+    expect(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    }).toErrorDev('Unexpected return value from a callback ref in div', {
+      withoutStack: true,
+    });
+  });
 });
 
 describe('root level refs', () => {
@@ -456,7 +487,7 @@ describe('creating element with ref in constructor', () => {
         '1. You may be adding a ref to a function component\n' +
         "2. You may be adding a ref to a component that was not created inside a component's render method\n" +
         '3. You have multiple copies of React loaded\n' +
-        'See https://fb.me/react-refs-must-have-owner for more information.',
+        'See https://reactjs.org/link/refs-must-have-owner for more information.',
     );
   });
 });

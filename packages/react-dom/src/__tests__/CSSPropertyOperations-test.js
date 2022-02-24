@@ -224,7 +224,7 @@ describe('CSSPropertyOperations', () => {
     ReactDOM.render(<Comp />, root);
   });
 
-  it('should warn about style containing a Infinity value', () => {
+  it('should warn about style containing an Infinity value', () => {
     class Comp extends React.Component {
       static displayName = 'Comp';
 
@@ -245,13 +245,13 @@ describe('CSSPropertyOperations', () => {
   it('should not add units to CSS custom properties', () => {
     class Comp extends React.Component {
       render() {
-        return <div style={{'--foo': 5}} />;
+        return <div style={{'--foo': '5'}} />;
       }
     }
 
     const root = document.createElement('div');
     ReactDOM.render(<Comp />, root);
 
-    expect(root.children[0].style.Foo).toEqual('5');
+    expect(root.children[0].style.getPropertyValue('--foo')).toEqual('5');
   });
 });

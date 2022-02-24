@@ -14,10 +14,7 @@ describe('ReactDOMComponent', () => {
   let ReactTestUtils;
   let ReactDOM;
   let ReactDOMServer;
-
-  function normalizeCodeLocInfo(str) {
-    return str && str.replace(/\(at .+?:\d+\)/g, '(at **)');
-  }
+  const ReactFeatureFlags = require('shared/ReactFeatureFlags');
 
   beforeEach(() => {
     jest.resetModules();
@@ -153,7 +150,7 @@ describe('ReactDOMComponent', () => {
       ).toErrorDev(
         'Warning: Invalid value for prop `foo` on <div> tag. Either remove it ' +
           'from the element, or pass a string or number value to keep ' +
-          'it in the DOM. For details, see https://fb.me/react-attribute-behavior' +
+          'it in the DOM. For details, see https://reactjs.org/link/attribute-behavior ' +
           '\n    in div (at **)',
       );
     });
@@ -165,7 +162,7 @@ describe('ReactDOMComponent', () => {
       ).toErrorDev(
         'Warning: Invalid values for props `foo`, `baz` on <div> tag. Either remove ' +
           'them from the element, or pass a string or number value to keep ' +
-          'them in the DOM. For details, see https://fb.me/react-attribute-behavior' +
+          'them in the DOM. For details, see https://reactjs.org/link/attribute-behavior ' +
           '\n    in div (at **)',
       );
     });
@@ -182,24 +179,21 @@ describe('ReactDOMComponent', () => {
     it('should warn for unknown string event handlers', () => {
       const container = document.createElement('div');
       expect(() =>
-        ReactDOM.render(<div onUnknown="alert(&quot;hack&quot;)" />, container),
+        ReactDOM.render(<div onUnknown='alert("hack")' />, container),
       ).toErrorDev(
         'Warning: Unknown event handler property `onUnknown`. It will be ignored.\n    in div (at **)',
       );
       expect(container.firstChild.hasAttribute('onUnknown')).toBe(false);
       expect(container.firstChild.onUnknown).toBe(undefined);
       expect(() =>
-        ReactDOM.render(<div onunknown="alert(&quot;hack&quot;)" />, container),
+        ReactDOM.render(<div onunknown='alert("hack")' />, container),
       ).toErrorDev(
         'Warning: Unknown event handler property `onunknown`. It will be ignored.\n    in div (at **)',
       );
       expect(container.firstChild.hasAttribute('onunknown')).toBe(false);
       expect(container.firstChild.onunknown).toBe(undefined);
       expect(() =>
-        ReactDOM.render(
-          <div on-unknown="alert(&quot;hack&quot;)" />,
-          container,
-        ),
+        ReactDOM.render(<div on-unknown='alert("hack")' />, container),
       ).toErrorDev(
         'Warning: Unknown event handler property `on-unknown`. It will be ignored.\n    in div (at **)',
       );
@@ -258,6 +252,28 @@ describe('ReactDOMComponent', () => {
           '\n    in span (at **)',
       );
       ReactDOM.render(<span style={style} />, div);
+    });
+
+    it('throws with Temporal-like objects as style values', () => {
+      class TemporalLike {
+        valueOf() {
+          // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
+          // See https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
+          throw new TypeError('prod message');
+        }
+        toString() {
+          return '2020-01-01';
+        }
+      }
+      const style = {fontSize: new TemporalLike()};
+      const div = document.createElement('div');
+      const test = () => ReactDOM.render(<span style={style} />, div);
+      expect(() =>
+        expect(test).toThrowError(new TypeError('prod message')),
+      ).toErrorDev(
+        'Warning: The provided `fontSize` CSS property is an unsupported type TemporalLike.' +
+          ' This value must be coerced to a string before before using it here.',
+      );
     });
 
     it('should update styles if initially null', () => {
@@ -447,6 +463,111 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('data-foo')).toBe(false);
     });
 
+    if (ReactFeatureFlags.enableFilterEmptyStringAttributesDOM) {
+      it('should not add an empty src attribute', () => {
+        const container = document.createElement('div');
+        expect(() => ReactDOM.render(<img src="" />, container)).toErrorDev(
+          'An empty string ("") was passed to the src attribute. ' +
+            'This may cause the browser to download the whole page again over the network. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to src instead of an empty string.',
+        );
+        const node = container.firstChild;
+        expect(node.hasAttribute('src')).toBe(false);
+
+        ReactDOM.render(<img src="abc" />, container);
+        expect(node.hasAttribute('src')).toBe(true);
+
+        expect(() => ReactDOM.render(<img src="" />, container)).toErrorDev(
+          'An empty string ("") was passed to the src attribute. ' +
+            'This may cause the browser to download the whole page again over the network. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to src instead of an empty string.',
+        );
+        expect(node.hasAttribute('src')).toBe(false);
+      });
+
+      it('should not add an empty href attribute', () => {
+        const container = document.createElement('div');
+        expect(() => ReactDOM.render(<link href="" />, container)).toErrorDev(
+          'An empty string ("") was passed to the href attribute. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to href instead of an empty string.',
+        );
+        const node = container.firstChild;
+        expect(node.hasAttribute('href')).toBe(false);
+
+        ReactDOM.render(<link href="abc" />, container);
+        expect(node.hasAttribute('href')).toBe(true);
+
+        expect(() => ReactDOM.render(<link href="" />, container)).toErrorDev(
+          'An empty string ("") was passed to the href attribute. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to href instead of an empty string.',
+        );
+        expect(node.hasAttribute('href')).toBe(false);
+      });
+
+      it('should not add an empty action attribute', () => {
+        const container = document.createElement('div');
+        expect(() => ReactDOM.render(<form action="" />, container)).toErrorDev(
+          'An empty string ("") was passed to the action attribute. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to action instead of an empty string.',
+        );
+        const node = container.firstChild;
+        expect(node.hasAttribute('action')).toBe(false);
+
+        ReactDOM.render(<form action="abc" />, container);
+        expect(node.hasAttribute('action')).toBe(true);
+
+        expect(() => ReactDOM.render(<form action="" />, container)).toErrorDev(
+          'An empty string ("") was passed to the action attribute. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to action instead of an empty string.',
+        );
+        expect(node.hasAttribute('action')).toBe(false);
+      });
+
+      it('should not add an empty formAction attribute', () => {
+        const container = document.createElement('div');
+        expect(() =>
+          ReactDOM.render(<button formAction="" />, container),
+        ).toErrorDev(
+          'An empty string ("") was passed to the formAction attribute. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to formAction instead of an empty string.',
+        );
+        const node = container.firstChild;
+        expect(node.hasAttribute('formAction')).toBe(false);
+
+        ReactDOM.render(<button formAction="abc" />, container);
+        expect(node.hasAttribute('formAction')).toBe(true);
+
+        expect(() =>
+          ReactDOM.render(<button formAction="" />, container),
+        ).toErrorDev(
+          'An empty string ("") was passed to the formAction attribute. ' +
+            'To fix this, either do not render the element at all ' +
+            'or pass null to formAction instead of an empty string.',
+        );
+        expect(node.hasAttribute('formAction')).toBe(false);
+      });
+
+      it('should not filter attributes for custom elements', () => {
+        const container = document.createElement('div');
+        ReactDOM.render(
+          <some-custom-element action="" formAction="" href="" src="" />,
+          container,
+        );
+        const node = container.firstChild;
+        expect(node.hasAttribute('action')).toBe(true);
+        expect(node.hasAttribute('formAction')).toBe(true);
+        expect(node.hasAttribute('href')).toBe(true);
+        expect(node.hasAttribute('src')).toBe(true);
+      });
+    }
+
     it('should apply React-specific aliases to HTML elements', () => {
       const container = document.createElement('div');
       ReactDOM.render(<form acceptCharset="foo" />, container);
@@ -567,8 +688,8 @@ describe('ReactDOMComponent', () => {
             {'></div><script>alert("hi")</script>': 'selected'},
             null,
           );
-          let result1 = ReactDOMServer.renderToString(element1);
-          let result2 = ReactDOMServer.renderToString(element2);
+          const result1 = ReactDOMServer.renderToString(element1);
+          const result2 = ReactDOMServer.renderToString(element2);
           expect(result1.toLowerCase()).not.toContain('onclick');
           expect(result2.toLowerCase()).not.toContain('script');
         }
@@ -591,8 +712,8 @@ describe('ReactDOMComponent', () => {
             {'></x-foo-component><script>alert("hi")</script>': 'selected'},
             null,
           );
-          let result1 = ReactDOMServer.renderToString(element1);
-          let result2 = ReactDOMServer.renderToString(element2);
+          const result1 = ReactDOMServer.renderToString(element1);
+          const result2 = ReactDOMServer.renderToString(element2);
           expect(result1.toLowerCase()).not.toContain('onclick');
           expect(result2.toLowerCase()).not.toContain('script');
         }
@@ -959,7 +1080,7 @@ describe('ReactDOMComponent', () => {
       expect(nodeValueSetter).toHaveBeenCalledTimes(3);
     });
 
-    it('should ignore attribute whitelist for elements with the "is" attribute', () => {
+    it('should ignore attribute list for elements with the "is" attribute', () => {
       const container = document.createElement('div');
       ReactDOM.render(<button is="test" cowabunga="chevynova" />, container);
       expect(container.firstChild.hasAttribute('cowabunga')).toBe(true);
@@ -1031,7 +1152,7 @@ describe('ReactDOMComponent', () => {
 
   describe('createOpenTagMarkup', () => {
     function quoteRegexp(str) {
-      return (str + '').replace(/([.?*+\^$\[\]\\(){}|-])/g, '\\$1');
+      return String(str).replace(/([.?*+\^$\[\]\\(){}|-])/g, '\\$1');
     }
 
     function expectToHaveAttribute(actual, expected) {
@@ -1065,7 +1186,7 @@ describe('ReactDOMComponent', () => {
 
   describe('createContentMarkup', () => {
     function quoteRegexp(str) {
-      return (str + '').replace(/([.?*+\^$\[\]\\(){}|-])/g, '\\$1');
+      return String(str).replace(/([.?*+\^$\[\]\\(){}|-])/g, '\\$1');
     }
 
     function genMarkup(props) {
@@ -1122,7 +1243,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    it('should not duplicate uppercased selfclosing tags', () => {
+    it('should warn for uppercased selfclosing tags', () => {
       class Container extends React.Component {
         render() {
           return React.createElement('BR', null);
@@ -1138,7 +1259,8 @@ describe('ReactDOMComponent', () => {
           'Use PascalCase for React components, ' +
           'or lowercase for HTML elements.',
       );
-      expect(returnedValue).not.toContain('</BR>');
+      // This includes a duplicate tag because we didn't treat this as self-closing.
+      expect(returnedValue).toContain('</BR>');
     });
 
     it('should warn on upper case HTML tags, not SVG nor custom tags', () => {
@@ -1169,13 +1291,9 @@ describe('ReactDOMComponent', () => {
       let realToString;
       try {
         realToString = Object.prototype.toString;
-        let wrappedToString = function() {
+        const wrappedToString = function() {
           // Emulate browser behavior which is missing in jsdom
           if (this instanceof window.HTMLUnknownElement) {
-            return '[object HTMLUnknownElement]';
-          }
-          // Special case! Read explanation below in the test.
-          if (this instanceof window.HTMLTimeElement) {
             return '[object HTMLUnknownElement]';
           }
           return realToString.apply(this, arguments);
@@ -1190,11 +1308,6 @@ describe('ReactDOMComponent', () => {
           'The tag <foo> is unrecognized in this browser',
         );
         ReactTestUtils.renderIntoDocument(<foo />);
-        // This is a funny case.
-        // Chrome is the only major browser not shipping <time>. But as of July
-        // 2017 it intends to ship it due to widespread usage. We intentionally
-        // *don't* warn for <time> even if it's unrecognized by Chrome because
-        // it soon will be, and many apps have been using it anyway.
         ReactTestUtils.renderIntoDocument(<time />);
         // Corner case. Make sure out deduplication logic doesn't break with weird tag.
         expect(() =>
@@ -1212,84 +1325,25 @@ describe('ReactDOMComponent', () => {
 
     it('should throw on children for void elements', () => {
       const container = document.createElement('div');
-      let caughtErr;
-      try {
+      expect(() => {
         ReactDOM.render(<input>children</input>, container);
-      } catch (err) {
-        caughtErr = err;
-      }
-      expect(caughtErr).not.toBe(undefined);
-      expect(normalizeCodeLocInfo(caughtErr.message)).toContain(
+      }).toThrowError(
         'input is a void element tag and must neither have `children` nor ' +
-          'use `dangerouslySetInnerHTML`.' +
-          (__DEV__ ? '\n    in input (at **)' : ''),
+          'use `dangerouslySetInnerHTML`.',
       );
     });
 
     it('should throw on dangerouslySetInnerHTML for void elements', () => {
       const container = document.createElement('div');
-      let caughtErr;
-      try {
+      expect(() => {
         ReactDOM.render(
           <input dangerouslySetInnerHTML={{__html: 'content'}} />,
           container,
         );
-      } catch (err) {
-        caughtErr = err;
-      }
-      expect(caughtErr).not.toBe(undefined);
-      expect(normalizeCodeLocInfo(caughtErr.message)).toContain(
+      }).toThrowError(
         'input is a void element tag and must neither have `children` nor ' +
-          'use `dangerouslySetInnerHTML`.' +
-          (__DEV__ ? '\n    in input (at **)' : ''),
+          'use `dangerouslySetInnerHTML`.',
       );
-    });
-
-    it('should emit a warning once for a named custom component using shady DOM', () => {
-      const defaultCreateElement = document.createElement.bind(document);
-
-      try {
-        document.createElement = element => {
-          const container = defaultCreateElement(element);
-          container.shadyRoot = {};
-          return container;
-        };
-        class ShadyComponent extends React.Component {
-          render() {
-            return <polymer-component />;
-          }
-        }
-        const node = document.createElement('div');
-        expect(() => ReactDOM.render(<ShadyComponent />, node)).toErrorDev(
-          'ShadyComponent is using shady DOM. Using shady DOM with React can ' +
-            'cause things to break subtly.',
-        );
-        mountComponent({is: 'custom-shady-div2'});
-      } finally {
-        document.createElement = defaultCreateElement;
-      }
-    });
-
-    it('should emit a warning once for an unnamed custom component using shady DOM', () => {
-      const defaultCreateElement = document.createElement.bind(document);
-
-      try {
-        document.createElement = element => {
-          const container = defaultCreateElement(element);
-          container.shadyRoot = {};
-          return container;
-        };
-
-        expect(() => mountComponent({is: 'custom-shady-div'})).toErrorDev(
-          'A component is using shady DOM. Using shady DOM with React can ' +
-            'cause things to break subtly.',
-        );
-
-        // No additional warnings are expected
-        mountComponent({is: 'custom-shady-div2'});
-      } finally {
-        document.createElement = defaultCreateElement;
-      }
     });
 
     it('should treat menuitem as a void element but still create the closing tag', () => {
@@ -1344,7 +1398,7 @@ describe('ReactDOMComponent', () => {
         mountComponent({dangerouslySetInnerHTML: '<span>Hi Jim!</span>'});
       }).toThrowError(
         '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
-          'Please visit https://fb.me/react-invariant-dangerously-set-inner-html for more information.',
+          'Please visit https://reactjs.org/link/dangerously-set-inner-html for more information.',
       );
     });
 
@@ -1353,7 +1407,7 @@ describe('ReactDOMComponent', () => {
         mountComponent({dangerouslySetInnerHTML: {foo: 'bar'}});
       }).toThrowError(
         '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
-          'Please visit https://fb.me/react-invariant-dangerously-set-inner-html for more information.',
+          'Please visit https://reactjs.org/link/dangerously-set-inner-html for more information.',
       );
     });
 
@@ -1400,18 +1454,11 @@ describe('ReactDOMComponent', () => {
       }
 
       const container = document.createElement('div');
-      let caughtErr;
-      try {
+      expect(() => {
         ReactDOM.render(<X />, container);
-      } catch (err) {
-        caughtErr = err;
-      }
-
-      expect(caughtErr).not.toBe(undefined);
-      expect(normalizeCodeLocInfo(caughtErr.message)).toContain(
+      }).toThrowError(
         'input is a void element tag and must neither have `children` ' +
-          'nor use `dangerouslySetInnerHTML`.' +
-          (__DEV__ ? '\n    in input (at **)' + '\n    in X (at **)' : ''),
+          'nor use `dangerouslySetInnerHTML`.',
       );
     });
 
@@ -1566,19 +1613,12 @@ describe('ReactDOMComponent', () => {
         }
       }
 
-      let caughtErr;
-      try {
+      expect(() => {
         ReactDOM.render(<Animal />, container);
-      } catch (err) {
-        caughtErr = err;
-      }
-
-      expect(caughtErr).not.toBe(undefined);
-      expect(normalizeCodeLocInfo(caughtErr.message)).toContain(
+      }).toThrowError(
         'The `style` prop expects a mapping from style properties to values, ' +
           "not a string. For example, style={{marginRight: spacing + 'em'}} " +
-          'when using JSX.' +
-          (__DEV__ ? '\n    in div (at **)' + '\n    in Animal (at **)' : ''),
+          'when using JSX.',
       );
     });
 
@@ -1668,10 +1708,6 @@ describe('ReactDOMComponent', () => {
           '<div>.' +
           '\n    in tr (at **)' +
           '\n    in div (at **)',
-        'Warning: validateDOMNesting(...): <tr> cannot appear as a child of ' +
-          '<div>.' +
-          '\n    in tr (at **)' +
-          '\n    in div (at **)',
       ]);
     });
 
@@ -1741,18 +1777,6 @@ describe('ReactDOMComponent', () => {
         return <Row />;
       }
 
-      class Table extends React.Component {
-        render() {
-          return <table>{this.props.children}</table>;
-        }
-      }
-
-      class FancyTable extends React.Component {
-        render() {
-          return <Table>{this.props.children}</Table>;
-        }
-      }
-
       function Viz1() {
         return (
           <table>
@@ -1770,6 +1794,27 @@ describe('ReactDOMComponent', () => {
           '\n    in table (at **)' +
           '\n    in Viz1 (at **)',
       );
+    });
+
+    it('gives useful context in warnings 2', () => {
+      function Row() {
+        return <tr />;
+      }
+      function FancyRow() {
+        return <Row />;
+      }
+
+      class Table extends React.Component {
+        render() {
+          return <table>{this.props.children}</table>;
+        }
+      }
+
+      class FancyTable extends React.Component {
+        render() {
+          return <Table>{this.props.children}</Table>;
+        }
+      }
 
       function Viz2() {
         return (
@@ -1790,7 +1835,27 @@ describe('ReactDOMComponent', () => {
           '\n    in FancyTable (at **)' +
           '\n    in Viz2 (at **)',
       );
+    });
 
+    it('gives useful context in warnings 3', () => {
+      function Row() {
+        return <tr />;
+      }
+      function FancyRow() {
+        return <Row />;
+      }
+
+      class Table extends React.Component {
+        render() {
+          return <table>{this.props.children}</table>;
+        }
+      }
+
+      class FancyTable extends React.Component {
+        render() {
+          return <Table>{this.props.children}</Table>;
+        }
+      }
       expect(() => {
         ReactTestUtils.renderIntoDocument(
           <FancyTable>
@@ -1805,6 +1870,15 @@ describe('ReactDOMComponent', () => {
           '\n    in Table (at **)' +
           '\n    in FancyTable (at **)',
       );
+    });
+
+    it('gives useful context in warnings 4', () => {
+      function Row() {
+        return <tr />;
+      }
+      function FancyRow() {
+        return <Row />;
+      }
 
       expect(() => {
         ReactTestUtils.renderIntoDocument(
@@ -1818,6 +1892,20 @@ describe('ReactDOMComponent', () => {
           '\n    in FancyRow (at **)' +
           '\n    in table (at **)',
       );
+    });
+
+    it('gives useful context in warnings 5', () => {
+      class Table extends React.Component {
+        render() {
+          return <table>{this.props.children}</table>;
+        }
+      }
+
+      class FancyTable extends React.Component {
+        render() {
+          return <Table>{this.props.children}</Table>;
+        }
+      }
 
       expect(() => {
         ReactTestUtils.renderIntoDocument(
@@ -2346,6 +2434,28 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('whatever')).toBe('[object Object]');
     });
 
+    it('allows Temporal-like objects as HTML (they are not coerced to strings first)', function() {
+      class TemporalLike {
+        valueOf() {
+          // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
+          // See https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
+          throw new TypeError('prod message');
+        }
+        toString() {
+          return '2020-01-01';
+        }
+      }
+
+      // `dangerouslySetInnerHTML` is never coerced to a string, so won't throw
+      // even with a Temporal-like object.
+      const container = document.createElement('div');
+      ReactDOM.render(
+        <div dangerouslySetInnerHTML={{__html: new TemporalLike()}} />,
+        container,
+      );
+      expect(container.firstChild.innerHTML).toEqual('2020-01-01');
+    });
+
     it('allows cased data attributes', function() {
       let el;
       expect(() => {
@@ -2425,7 +2535,7 @@ describe('ReactDOMComponent', () => {
       const container = document.createElement('div');
 
       ReactDOM.render(<img src={obj} />, container);
-      expect(container.firstChild.src).toBe('hello');
+      expect(container.firstChild.src).toBe('http://localhost/hello');
 
       ReactDOM.render(<svg arabicForm={obj} />, container);
       expect(container.firstChild.getAttribute('arabic-form')).toBe('hello');
@@ -2459,7 +2569,7 @@ describe('ReactDOMComponent', () => {
       const child = Object.create(parent);
       const el = ReactTestUtils.renderIntoDocument(<img src={child} />);
 
-      expect(el.src).toBe('hello.jpg');
+      expect(el.src).toBe('http://localhost/hello.jpg');
     });
 
     it('assigns ajaxify (an important internal FB attribute)', function() {
@@ -2603,10 +2713,10 @@ describe('ReactDOMComponent', () => {
   });
 
   it('receives events in specific order', () => {
-    let eventOrder = [];
-    let track = tag => () => eventOrder.push(tag);
-    let outerRef = React.createRef();
-    let innerRef = React.createRef();
+    const eventOrder = [];
+    const track = tag => () => eventOrder.push(tag);
+    const outerRef = React.createRef();
+    const innerRef = React.createRef();
 
     function OuterReactApp() {
       return (
@@ -2640,19 +2750,27 @@ describe('ReactDOMComponent', () => {
 
       innerRef.current.click();
 
-      // The order we receive here is not ideal since it is expected that the
-      // capture listener fire before all bubble listeners. Other React apps
-      // might depend on this.
-      //
-      // @see https://github.com/facebook/react/pull/12919#issuecomment-395224674
-      expect(eventOrder).toEqual([
-        'document capture',
-        'inner capture',
-        'inner bubble',
-        'outer capture',
-        'outer bubble',
-        'document bubble',
-      ]);
+      if (ReactFeatureFlags.enableLegacyFBSupport) {
+        // The order will change here, as the legacy FB support adds
+        // the event listener onto the document after the one above has.
+        expect(eventOrder).toEqual([
+          'document capture',
+          'outer capture',
+          'inner capture',
+          'document bubble',
+          'inner bubble',
+          'outer bubble',
+        ]);
+      } else {
+        expect(eventOrder).toEqual([
+          'document capture',
+          'outer capture',
+          'inner capture',
+          'inner bubble',
+          'outer bubble',
+          'document bubble',
+        ]);
+      }
     } finally {
       document.body.removeChild(container);
     }

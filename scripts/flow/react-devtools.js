@@ -7,19 +7,12 @@
  * @flow
  */
 
-declare module 'events' {
-  declare class EventEmitter<Events: Object> {
-    addListener<Event: $Keys<Events>>(
-      event: Event,
-      listener: (...$ElementType<Events, Event>) => any,
-    ): void;
-    emit: <Event: $Keys<Events>>(
-      event: Event,
-      ...$ElementType<Events, Event>
-    ) => void;
-    removeListener(event: $Keys<Events>, listener: Function): void;
-    removeAllListeners(event?: $Keys<Events>): void;
-  }
+declare var __EXTENSION__: boolean;
+declare var __TEST__: boolean;
 
-  declare export default typeof EventEmitter;
-}
+declare var DARK_MODE_DIMMED_WARNING_COLOR: string;
+declare var DARK_MODE_DIMMED_ERROR_COLOR: string;
+declare var DARK_MODE_DIMMED_LOG_COLOR: string;
+declare var LIGHT_MODE_DIMMED_WARNING_COLOR: string;
+declare var LIGHT_MODE_DIMMED_ERROR_COLOR: string;
+declare var LIGHT_MODE_DIMMED_LOG_COLOR: string;

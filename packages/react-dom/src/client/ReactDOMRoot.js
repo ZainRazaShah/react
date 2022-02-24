@@ -7,26 +7,42 @@
  * @flow
  */
 
-import type {DOMContainer} from './ReactDOM';
-import type {RootTag} from 'shared/ReactRootTags';
-import type {ReactNodeList} from 'shared/ReactTypes';
-// TODO: This type is shared between the reconciler and ReactDOM, but will
-// eventually be lifted out to the renderer.
-import type {FiberRoot} from 'react-reconciler/src/ReactFiberRoot';
+import type {Container} from './ReactDOMHostConfig';
+import type {MutableSource, ReactNodeList} from 'shared/ReactTypes';
+import type {
+  FiberRoot,
+  TransitionTracingCallbacks,
+} from 'react-reconciler/src/ReactInternalTypes';
+
+import {queueExplicitHydrationTarget} from '../events/ReactDOMEventReplaying';
 
 export type RootType = {
-  render(children: ReactNodeList, callback: ?() => mixed): void,
-  unmount(callback: ?() => mixed): void,
-
-  _internalRoot: FiberRoot,
+  render(children: ReactNodeList): void,
+  unmount(): void,
+  _internalRoot: FiberRoot | null,
+  ...
 };
 
-export type RootOptions = {
-  hydrate?: boolean,
-  hydrationOptions?: {
-    onHydrated?: (suspenseNode: Comment) => void,
-    onDeleted?: (suspenseNode: Comment) => void,
-  },
+export type CreateRootOptions = {
+  unstable_strictMode?: boolean,
+  unstable_concurrentUpdatesByDefault?: boolean,
+  identifierPrefix?: string,
+  onRecoverableError?: (error: mixed) => void,
+  transitionCallbacks?: TransitionTracingCallbacks,
+  ...
+};
+
+export type HydrateRootOptions = {
+  // Hydration options
+  hydratedSources?: Array<MutableSource<any>>,
+  onHydrated?: (suspenseNode: Comment) => void,
+  onDeleted?: (suspenseNode: Comment) => void,
+  // Options for all roots
+  unstable_strictMode?: boolean,
+  unstable_concurrentUpdatesByDefault?: boolean,
+  identifierPrefix?: string,
+  onRecoverableError?: (error: mixed) => void,
+  ...
 };
 
 import {
@@ -34,7 +50,7 @@ import {
   markContainerAsRoot,
   unmarkContainerAsRoot,
 } from './ReactDOMComponentTree';
-import {eagerlyTrapReplayableEvents} from '../events/ReactDOMEventReplaying';
+import {listenToAllSupportedEvents} from '../events/DOMPluginEventSystem';
 import {
   ELEMENT_NODE,
   COMMENT_NODE,
@@ -42,104 +58,254 @@ import {
   DOCUMENT_FRAGMENT_NODE,
 } from '../shared/HTMLNodeType';
 
-import {createContainer, updateContainer} from 'react-reconciler/inline.dom';
-import invariant from 'shared/invariant';
-import {BlockingRoot, ConcurrentRoot, LegacyRoot} from 'shared/ReactRootTags';
+import {
+  createContainer,
+  createHydrationContainer,
+  updateContainer,
+  findHostInstanceWithNoPortals,
+  registerMutableSourceForHydration,
+  flushSync,
+  isAlreadyRendering,
+} from 'react-reconciler/src/ReactFiberReconciler';
+import {ConcurrentRoot} from 'react-reconciler/src/ReactRootTags';
+import {
+  allowConcurrentByDefault,
+  disableCommentsAsDOMContainers,
+} from 'shared/ReactFeatureFlags';
 
-function ReactDOMRoot(container: DOMContainer, options: void | RootOptions) {
-  this._internalRoot = createRootImpl(container, ConcurrentRoot, options);
+/* global reportError */
+const defaultOnRecoverableError =
+  typeof reportError === 'function'
+    ? // In modern browsers, reportError will dispatch an error event,
+      // emulating an uncaught JavaScript error.
+      reportError
+    : (error: mixed) => {
+        // In older browsers and test environments, fallback to console.error.
+        // eslint-disable-next-line react-internal/no-production-logging, react-internal/warning-args
+        console.error(error);
+      };
+
+function ReactDOMRoot(internalRoot: FiberRoot) {
+  this._internalRoot = internalRoot;
 }
 
-function ReactDOMBlockingRoot(
-  container: DOMContainer,
-  tag: RootTag,
-  options: void | RootOptions,
-) {
-  this._internalRoot = createRootImpl(container, tag, options);
-}
-
-ReactDOMRoot.prototype.render = ReactDOMBlockingRoot.prototype.render = function(
+ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = function(
   children: ReactNodeList,
-  callback: ?() => mixed,
 ): void {
   const root = this._internalRoot;
-  const cb = callback === undefined ? null : callback;
-  if (__DEV__) {
-    warnOnInvalidCallback(cb, 'render');
+  if (root === null) {
+    throw new Error('Cannot update an unmounted root.');
   }
-  updateContainer(children, root, null, cb);
-};
 
-ReactDOMRoot.prototype.unmount = ReactDOMBlockingRoot.prototype.unmount = function(
-  callback: ?() => mixed,
-): void {
-  const root = this._internalRoot;
-  const cb = callback === undefined ? null : callback;
   if (__DEV__) {
-    warnOnInvalidCallback(cb, 'render');
-  }
-  const container = root.containerInfo;
-  updateContainer(null, root, null, () => {
-    unmarkContainerAsRoot(container);
-    if (cb !== null) {
-      cb();
+    if (typeof arguments[1] === 'function') {
+      console.error(
+        'render(...): does not support the second callback argument. ' +
+          'To execute a side effect after rendering, declare it in a component body with useEffect().',
+      );
     }
-  });
+    const container = root.containerInfo;
+
+    if (container.nodeType !== COMMENT_NODE) {
+      const hostInstance = findHostInstanceWithNoPortals(root.current);
+      if (hostInstance) {
+        if (hostInstance.parentNode !== container) {
+          console.error(
+            'render(...): It looks like the React-rendered content of the ' +
+              'root container was removed without using React. This is not ' +
+              'supported and will cause errors. Instead, call ' +
+              "root.unmount() to empty a root's container.",
+          );
+        }
+      }
+    }
+  }
+  updateContainer(children, root, null, null);
 };
 
-function createRootImpl(
-  container: DOMContainer,
-  tag: RootTag,
-  options: void | RootOptions,
-) {
-  // Tag is either LegacyRoot or Concurrent Root
-  const hydrate = options != null && options.hydrate === true;
-  const hydrationCallbacks =
-    (options != null && options.hydrationOptions) || null;
-  const root = createContainer(container, tag, hydrate, hydrationCallbacks);
-  markContainerAsRoot(root.current, container);
-  if (hydrate && tag !== LegacyRoot) {
-    const doc =
-      container.nodeType === DOCUMENT_NODE
-        ? container
-        : container.ownerDocument;
-    eagerlyTrapReplayableEvents(doc);
+ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = function(): void {
+  if (__DEV__) {
+    if (typeof arguments[0] === 'function') {
+      console.error(
+        'unmount(...): does not support a callback argument. ' +
+          'To execute a side effect after rendering, declare it in a component body with useEffect().',
+      );
+    }
   }
-  return root;
-}
+  const root = this._internalRoot;
+  if (root !== null) {
+    this._internalRoot = null;
+    const container = root.containerInfo;
+    if (__DEV__) {
+      if (isAlreadyRendering()) {
+        console.error(
+          'Attempted to synchronously unmount a root while React was already ' +
+            'rendering. React cannot finish unmounting the root until the ' +
+            'current render has completed, which may lead to a race condition.',
+        );
+      }
+    }
+    flushSync(() => {
+      updateContainer(null, root, null, null);
+    });
+    unmarkContainerAsRoot(container);
+  }
+};
 
 export function createRoot(
-  container: DOMContainer,
-  options?: RootOptions,
+  container: Container,
+  options?: CreateRootOptions,
 ): RootType {
-  invariant(
-    isValidContainer(container),
-    'createRoot(...): Target container is not a DOM element.',
-  );
+  if (!isValidContainer(container)) {
+    throw new Error('createRoot(...): Target container is not a DOM element.');
+  }
+
   warnIfReactDOMContainerInDEV(container);
-  return new ReactDOMRoot(container, options);
-}
 
-export function createBlockingRoot(
-  container: DOMContainer,
-  options?: RootOptions,
-): RootType {
-  invariant(
-    isValidContainer(container),
-    'createRoot(...): Target container is not a DOM element.',
+  let isStrictMode = false;
+  let concurrentUpdatesByDefaultOverride = false;
+  let identifierPrefix = '';
+  let onRecoverableError = defaultOnRecoverableError;
+  let transitionCallbacks = null;
+
+  if (options !== null && options !== undefined) {
+    if (__DEV__) {
+      if ((options: any).hydrate) {
+        console.warn(
+          'hydrate through createRoot is deprecated. Use ReactDOM.hydrateRoot(container, <App />) instead.',
+        );
+      }
+    }
+    if (options.unstable_strictMode === true) {
+      isStrictMode = true;
+    }
+    if (
+      allowConcurrentByDefault &&
+      options.unstable_concurrentUpdatesByDefault === true
+    ) {
+      concurrentUpdatesByDefaultOverride = true;
+    }
+    if (options.identifierPrefix !== undefined) {
+      identifierPrefix = options.identifierPrefix;
+    }
+    if (options.onRecoverableError !== undefined) {
+      onRecoverableError = options.onRecoverableError;
+    }
+    if (options.transitionCallbacks !== undefined) {
+      transitionCallbacks = options.transitionCallbacks;
+    }
+  }
+
+  const root = createContainer(
+    container,
+    ConcurrentRoot,
+    false,
+    null,
+    isStrictMode,
+    concurrentUpdatesByDefaultOverride,
+    identifierPrefix,
+    onRecoverableError,
+    transitionCallbacks,
   );
-  warnIfReactDOMContainerInDEV(container);
-  return new ReactDOMBlockingRoot(container, BlockingRoot, options);
+  markContainerAsRoot(root.current, container);
+
+  const rootContainerElement =
+    container.nodeType === COMMENT_NODE ? container.parentNode : container;
+  listenToAllSupportedEvents(rootContainerElement);
+
+  return new ReactDOMRoot(root);
 }
 
-export function createLegacyRoot(
-  container: DOMContainer,
-  options?: RootOptions,
+function ReactDOMHydrationRoot(internalRoot: FiberRoot) {
+  this._internalRoot = internalRoot;
+}
+function scheduleHydration(target: Node) {
+  if (target) {
+    queueExplicitHydrationTarget(target);
+  }
+}
+ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = scheduleHydration;
+
+export function hydrateRoot(
+  container: Container,
+  initialChildren: ReactNodeList,
+  options?: HydrateRootOptions,
 ): RootType {
-  return new ReactDOMBlockingRoot(container, LegacyRoot, options);
+  if (!isValidContainer(container)) {
+    throw new Error('hydrateRoot(...): Target container is not a DOM element.');
+  }
+
+  warnIfReactDOMContainerInDEV(container);
+
+  // For now we reuse the whole bag of options since they contain
+  // the hydration callbacks.
+  const hydrationCallbacks = options != null ? options : null;
+  // TODO: Delete this option
+  const mutableSources = (options != null && options.hydratedSources) || null;
+
+  let isStrictMode = false;
+  let concurrentUpdatesByDefaultOverride = false;
+  let identifierPrefix = '';
+  let onRecoverableError = defaultOnRecoverableError;
+  if (options !== null && options !== undefined) {
+    if (options.unstable_strictMode === true) {
+      isStrictMode = true;
+    }
+    if (
+      allowConcurrentByDefault &&
+      options.unstable_concurrentUpdatesByDefault === true
+    ) {
+      concurrentUpdatesByDefaultOverride = true;
+    }
+    if (options.identifierPrefix !== undefined) {
+      identifierPrefix = options.identifierPrefix;
+    }
+    if (options.onRecoverableError !== undefined) {
+      onRecoverableError = options.onRecoverableError;
+    }
+  }
+
+  const root = createHydrationContainer(
+    initialChildren,
+    container,
+    ConcurrentRoot,
+    hydrationCallbacks,
+    isStrictMode,
+    concurrentUpdatesByDefaultOverride,
+    identifierPrefix,
+    onRecoverableError,
+    // TODO(luna) Support hydration later
+    null,
+  );
+  markContainerAsRoot(root.current, container);
+  // This can't be a comment node since hydration doesn't work on comment nodes anyway.
+  listenToAllSupportedEvents(container);
+
+  if (mutableSources) {
+    for (let i = 0; i < mutableSources.length; i++) {
+      const mutableSource = mutableSources[i];
+      registerMutableSourceForHydration(root, mutableSource);
+    }
+  }
+
+  return new ReactDOMHydrationRoot(root);
 }
 
-export function isValidContainer(node: mixed): boolean {
+export function isValidContainer(node: any): boolean {
+  return !!(
+    node &&
+    (node.nodeType === ELEMENT_NODE ||
+      node.nodeType === DOCUMENT_NODE ||
+      node.nodeType === DOCUMENT_FRAGMENT_NODE ||
+      (!disableCommentsAsDOMContainers &&
+        node.nodeType === COMMENT_NODE &&
+        (node: any).nodeValue === ' react-mount-point-unstable '))
+  );
+}
+
+// TODO: Remove this function which also includes comment nodes.
+// We only use it in places that are currently more relaxed.
+export function isValidContainerLegacy(node: any): boolean {
   return !!(
     node &&
     (node.nodeType === ELEMENT_NODE ||
@@ -150,24 +316,21 @@ export function isValidContainer(node: mixed): boolean {
   );
 }
 
-export function warnOnInvalidCallback(
-  callback: mixed,
-  callerName: string,
-): void {
-  if (__DEV__) {
-    if (callback !== null && typeof callback !== 'function') {
-      console.error(
-        '%s(...): Expected the last optional `callback` argument to be a ' +
-          'function. Instead received: %s.',
-        callerName,
-        callback,
-      );
-    }
-  }
-}
-
 function warnIfReactDOMContainerInDEV(container) {
   if (__DEV__) {
+    if (
+      container.nodeType === ELEMENT_NODE &&
+      ((container: any): Element).tagName &&
+      ((container: any): Element).tagName.toUpperCase() === 'BODY'
+    ) {
+      console.error(
+        'createRoot(): Creating roots directly with document.body is ' +
+          'discouraged, since its children are often manipulated by third-party ' +
+          'scripts and browser extensions. This may lead to subtle ' +
+          'reconciliation issues. Try using a container element created ' +
+          'for your app.',
+      );
+    }
     if (isContainerMarkedAsRoot(container)) {
       if (container._reactRootContainer) {
         console.error(
