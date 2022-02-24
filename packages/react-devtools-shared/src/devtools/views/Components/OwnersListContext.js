@@ -7,7 +7,8 @@
  * @flow
  */
 
-import React, {createContext, useCallback, useContext, useEffect} from 'react';
+import * as React from 'react';
+import {createContext, useCallback, useContext, useEffect} from 'react';
 import {createResource} from '../../cache';
 import {BridgeContext, StoreContext} from '../context';
 import {TreeStateContext} from './TreeContext';
@@ -16,25 +17,29 @@ import {separateDisplayNameAndHOCs} from 'react-devtools-shared/src/utils';
 import type {OwnersList} from 'react-devtools-shared/src/backend/types';
 import type {
   Element,
-  Owner,
+  SerializedElement,
 } from 'react-devtools-shared/src/devtools/views/Components/types';
 import type {Resource, Thenable} from '../../cache';
 
-type Context = (id: number) => Array<Owner> | null;
+type Context = (id: number) => Array<SerializedElement> | null;
 
 const OwnersListContext = createContext<Context>(((null: any): Context));
 OwnersListContext.displayName = 'OwnersListContext';
 
-type ResolveFn = (ownersList: Array<Owner> | null) => void;
+type ResolveFn = (ownersList: Array<SerializedElement> | null) => void;
 type InProgressRequest = {|
-  promise: Thenable<Array<Owner>>,
+  promise: Thenable<Array<SerializedElement>>,
   resolveFn: ResolveFn,
 |};
 
 const inProgressRequests: WeakMap<Element, InProgressRequest> = new WeakMap();
-const resource: Resource<Element, Element, Array<Owner>> = createResource(
+const resource: Resource<
+  Element,
+  Element,
+  Array<SerializedElement>,
+> = createResource(
   (element: Element) => {
-    let request = inProgressRequests.get(element);
+    const request = inProgressRequests.get(element);
     if (request != null) {
       return request.promise;
     }
@@ -73,60 +78,51 @@ function OwnersListContextController({children}: Props) {
     [store],
   );
 
-  useEffect(
-    () => {
-      const onOwnersList = (ownersList: OwnersList) => {
-        const id = ownersList.id;
+  useEffect(() => {
+    const onOwnersList = (ownersList: OwnersList) => {
+      const id = ownersList.id;
 
-        const element = store.getElementByID(id);
-        if (element !== null) {
-          const request = inProgressRequests.get(element);
-          if (request != null) {
-            inProgressRequests.delete(element);
+      const element = store.getElementByID(id);
+      if (element !== null) {
+        const request = inProgressRequests.get(element);
+        if (request != null) {
+          inProgressRequests.delete(element);
 
-            request.resolveFn(
-              ownersList.owners === null
-                ? null
-                : ownersList.owners.map(owner => {
-                    const [
-                      displayNameWithoutHOCs,
-                      hocDisplayNames,
-                    ] = separateDisplayNameAndHOCs(
-                      owner.displayName,
-                      owner.type,
-                    );
+          request.resolveFn(
+            ownersList.owners === null
+              ? null
+              : ownersList.owners.map(owner => {
+                  const [
+                    displayNameWithoutHOCs,
+                    hocDisplayNames,
+                  ] = separateDisplayNameAndHOCs(owner.displayName, owner.type);
 
-                    return {
-                      ...owner,
-                      displayName: displayNameWithoutHOCs,
-                      hocDisplayNames,
-                    };
-                  }),
-            );
-          }
-        }
-      };
-
-      bridge.addListener('ownersList', onOwnersList);
-      return () => bridge.removeListener('ownersList', onOwnersList);
-    },
-    [bridge, store],
-  );
-
-  // This effect requests an updated owners list any time the selected owner changes
-  useEffect(
-    () => {
-      if (ownerID !== null) {
-        const rendererID = store.getRendererIDForElement(ownerID);
-        if (rendererID !== null) {
-          bridge.send('getOwnersList', {id: ownerID, rendererID});
+                  return {
+                    ...owner,
+                    displayName: displayNameWithoutHOCs,
+                    hocDisplayNames,
+                  };
+                }),
+          );
         }
       }
+    };
 
-      return () => {};
-    },
-    [bridge, ownerID, store],
-  );
+    bridge.addListener('ownersList', onOwnersList);
+    return () => bridge.removeListener('ownersList', onOwnersList);
+  }, [bridge, store]);
+
+  // This effect requests an updated owners list any time the selected owner changes
+  useEffect(() => {
+    if (ownerID !== null) {
+      const rendererID = store.getRendererIDForElement(ownerID);
+      if (rendererID !== null) {
+        bridge.send('getOwnersList', {id: ownerID, rendererID});
+      }
+    }
+
+    return () => {};
+  }, [bridge, ownerID, store]);
 
   return (
     <OwnersListContext.Provider value={read}>

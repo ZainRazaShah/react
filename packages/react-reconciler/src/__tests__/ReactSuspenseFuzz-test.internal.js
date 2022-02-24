@@ -2,6 +2,7 @@ let React;
 let Suspense;
 let ReactNoop;
 let Scheduler;
+let act;
 let ReactFeatureFlags;
 let Random;
 
@@ -21,12 +22,13 @@ describe('ReactSuspenseFuzz', () => {
   beforeEach(() => {
     jest.resetModules();
     ReactFeatureFlags = require('shared/ReactFeatureFlags');
-    ReactFeatureFlags.debugRenderPhaseSideEffectsForStrictMode = false;
+
     ReactFeatureFlags.replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
     React = require('react');
     Suspense = React.Suspense;
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
+    act = require('jest-react').act;
     Random = require('random-seed');
   });
 
@@ -46,32 +48,29 @@ describe('ReactSuspenseFuzz', () => {
     function Container({children, updates}) {
       const [step, setStep] = useState(0);
 
-      useLayoutEffect(
-        () => {
-          if (updates !== undefined) {
-            const cleanUps = new Set();
-            updates.forEach(({remountAfter}, i) => {
-              const task = {
-                label: `Remount children after ${remountAfter}ms`,
-              };
-              const timeoutID = setTimeout(() => {
-                pendingTasks.delete(task);
-                Scheduler.unstable_yieldValue(task.label);
-                setStep(i + 1);
-              }, remountAfter);
-              pendingTasks.add(task);
-              cleanUps.add(() => {
-                pendingTasks.delete(task);
-                clearTimeout(timeoutID);
-              });
-            });
-            return () => {
-              cleanUps.forEach(cleanUp => cleanUp());
+      useLayoutEffect(() => {
+        if (updates !== undefined) {
+          const cleanUps = new Set();
+          updates.forEach(({remountAfter}, i) => {
+            const task = {
+              label: `Remount children after ${remountAfter}ms`,
             };
-          }
-        },
-        [updates],
-      );
+            const timeoutID = setTimeout(() => {
+              pendingTasks.delete(task);
+              Scheduler.unstable_yieldValue(task.label);
+              setStep(i + 1);
+            }, remountAfter);
+            pendingTasks.add(task);
+            cleanUps.add(() => {
+              pendingTasks.delete(task);
+              clearTimeout(timeoutID);
+            });
+          });
+          return () => {
+            cleanUps.forEach(cleanUp => cleanUp());
+          };
+        }
+      }, [updates]);
 
       return <React.Fragment key={step}>{children}</React.Fragment>;
     }
@@ -79,34 +78,31 @@ describe('ReactSuspenseFuzz', () => {
     function Text({text, initialDelay = 0, updates}) {
       const [[step, delay], setStep] = useState([0, initialDelay]);
 
-      useLayoutEffect(
-        () => {
-          if (updates !== undefined) {
-            const cleanUps = new Set();
-            updates.forEach(({beginAfter, suspendFor}, i) => {
-              const task = {
-                label: `Update ${beginAfter}ms after mount and suspend for ${suspendFor}ms [${text}]`,
-              };
-              const timeoutID = setTimeout(() => {
-                pendingTasks.delete(task);
-                Scheduler.unstable_yieldValue(task.label);
-                setStep([i + 1, suspendFor]);
-              }, beginAfter);
-              pendingTasks.add(task);
-              cleanUps.add(() => {
-                pendingTasks.delete(task);
-                clearTimeout(timeoutID);
-              });
-            });
-            return () => {
-              cleanUps.forEach(cleanUp => cleanUp());
+      useLayoutEffect(() => {
+        if (updates !== undefined) {
+          const cleanUps = new Set();
+          updates.forEach(({beginAfter, suspendFor}, i) => {
+            const task = {
+              label: `Update ${beginAfter}ms after mount and suspend for ${suspendFor}ms [${text}]`,
             };
-          }
-        },
-        [updates],
-      );
+            const timeoutID = setTimeout(() => {
+              pendingTasks.delete(task);
+              Scheduler.unstable_yieldValue(task.label);
+              setStep([i + 1, suspendFor]);
+            }, beginAfter);
+            pendingTasks.add(task);
+            cleanUps.add(() => {
+              pendingTasks.delete(task);
+              clearTimeout(timeoutID);
+            });
+          });
+          return () => {
+            cleanUps.forEach(cleanUp => cleanUp());
+          };
+        }
+      }, [updates]);
 
-      const fullText = `${text}:${step}`;
+      const fullText = `[${text}:${step}]`;
 
       const shouldSuspend = useContext(ShouldSuspendContext);
 
@@ -149,7 +145,11 @@ describe('ReactSuspenseFuzz', () => {
         if ((elapsedTime += 1000) > 1000000) {
           throw new Error('Something did not resolve properly.');
         }
-        ReactNoop.act(() => jest.advanceTimersByTime(1000));
+        act(() => {
+          ReactNoop.batchedUpdates(() => {
+            jest.advanceTimersByTime(1000);
+          });
+        });
         Scheduler.unstable_flushAllWithoutAsserting();
       }
     }
@@ -169,26 +169,26 @@ describe('ReactSuspenseFuzz', () => {
       resolveAllTasks();
       const expectedOutput = expectedRoot.getChildrenAsJSX();
 
-      resetCache();
-      ReactNoop.renderLegacySyncRoot(children);
-      resolveAllTasks();
-      const legacyOutput = ReactNoop.getChildrenAsJSX();
-      expect(legacyOutput).toEqual(expectedOutput);
-      ReactNoop.renderLegacySyncRoot(null);
+      gate(flags => {
+        resetCache();
+        ReactNoop.renderLegacySyncRoot(children);
+        resolveAllTasks();
+        const legacyOutput = ReactNoop.getChildrenAsJSX();
+        expect(legacyOutput).toEqual(expectedOutput);
+        ReactNoop.renderLegacySyncRoot(null);
 
-      resetCache();
-      const batchedBlockingRoot = ReactNoop.createBlockingRoot();
-      batchedBlockingRoot.render(children);
-      resolveAllTasks();
-      const batchedSyncOutput = batchedBlockingRoot.getChildrenAsJSX();
-      expect(batchedSyncOutput).toEqual(expectedOutput);
-
-      resetCache();
-      const concurrentRoot = ReactNoop.createRoot();
-      concurrentRoot.render(children);
-      resolveAllTasks();
-      const concurrentOutput = concurrentRoot.getChildrenAsJSX();
-      expect(concurrentOutput).toEqual(expectedOutput);
+        // Observable behavior differs here in a way that's expected:
+        // If enableSuspenseLayoutEffectSemantics is enabled, layout effects are destroyed on re-suspend
+        // before larger 'beginAfter' timers have a chance to fire.
+        if (!flags.enableSuspenseLayoutEffectSemantics) {
+          resetCache();
+          const concurrentRoot = ReactNoop.createRoot();
+          concurrentRoot.render(children);
+          resolveAllTasks();
+          const concurrentOutput = concurrentRoot.getChildrenAsJSX();
+          expect(concurrentOutput).toEqual(expectedOutput);
+        }
+      });
     }
 
     function pickRandomWeighted(rand, options) {
@@ -232,7 +232,7 @@ describe('ReactSuspenseFuzz', () => {
               {value: 2, weight: 1},
             ]);
 
-            let updates = [];
+            const updates = [];
             for (let i = 0; i < numberOfUpdates; i++) {
               updates.push({
                 beginAfter: rand.intBetween(0, 10000),
@@ -255,7 +255,7 @@ describe('ReactSuspenseFuzz', () => {
               {value: 2, weight: 1},
             ]);
 
-            let updates = [];
+            const updates = [];
             for (let i = 0; i < numberOfUpdates; i++) {
               updates.push({
                 remountAfter: rand.intBetween(0, 10000),
@@ -421,6 +421,33 @@ Random seed is ${SEED}
             <Text initialDelay={6732} text="D" />
           </Container>
         </>,
+      );
+    });
+
+    it('4', () => {
+      const {Text, testResolvedOutput} = createFuzzer();
+      testResolvedOutput(
+        <React.Suspense fallback="Loading...">
+          <React.Suspense>
+            <React.Suspense>
+              <Text initialDelay={9683} text="E" updates={[]} />
+            </React.Suspense>
+            <Text
+              initialDelay={4053}
+              text="C"
+              updates={[
+                {
+                  beginAfter: 1566,
+                  suspendFor: 4142,
+                },
+                {
+                  beginAfter: 9572,
+                  suspendFor: 4832,
+                },
+              ]}
+            />
+          </React.Suspense>
+        </React.Suspense>,
       );
     });
   });

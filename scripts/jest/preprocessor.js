@@ -13,9 +13,6 @@ const pathToBabel = path.join(
   '../..',
   'package.json'
 );
-const pathToBabelPluginDevWithCode = require.resolve(
-  '../error-codes/transform-error-messages'
-);
 const pathToBabelPluginReplaceConsoleCalls = require.resolve(
   '../babel/transform-replace-console-calls'
 );
@@ -25,6 +22,9 @@ const pathToBabelPluginAsyncToGenerator = require.resolve(
 const pathToTransformInfiniteLoops = require.resolve(
   '../babel/transform-prevent-infinite-loops'
 );
+const pathToTransformTestGatePragma = require.resolve(
+  '../babel/transform-test-gate-pragma'
+);
 const pathToBabelrc = path.join(__dirname, '..', '..', 'babel.config.js');
 const pathToErrorCodes = require.resolve('../error-codes/codes.json');
 
@@ -33,8 +33,6 @@ const babelOptions = {
     // For Node environment only. For builds, Rollup takes care of ESM.
     require.resolve('@babel/plugin-transform-modules-commonjs'),
 
-    pathToBabelPluginDevWithCode,
-
     // Keep stacks detailed in tests.
     // Don't put this in .babelrc so that we don't embed filenames
     // into ReactART builds that include JSX.
@@ -42,6 +40,7 @@ const babelOptions = {
     require.resolve('@babel/plugin-transform-react-jsx-source'),
 
     pathToTransformInfiniteLoops,
+    pathToTransformTestGatePragma,
 
     // This optimization is important for extremely performance-sensitive (e.g. React source).
     // It's okay to disable it for tests.
@@ -55,6 +54,10 @@ const babelOptions = {
 
 module.exports = {
   process: function(src, filePath) {
+    if (filePath.match(/\.css$/)) {
+      // Don't try to parse CSS modules; they aren't needed for tests anyway.
+      return '';
+    }
     if (filePath.match(/\.coffee$/)) {
       return coffee.compile(src, {bare: true});
     }
@@ -97,8 +100,8 @@ module.exports = {
     __filename,
     pathToBabel,
     pathToBabelrc,
-    pathToBabelPluginDevWithCode,
     pathToTransformInfiniteLoops,
+    pathToTransformTestGatePragma,
     pathToErrorCodes,
   ]),
 };

@@ -54,7 +54,7 @@ describe('ReactDOMInput', () => {
     expect(() => {
       ReactDOM.render(<input type="text" value={0} />, container);
     }).toErrorDev(
-      'Failed prop type: You provided a `value` prop to a form field without an `onChange` handler.',
+      'Warning: You provided a `value` prop to a form field without an `onChange` handler.',
     );
   });
 
@@ -62,7 +62,7 @@ describe('ReactDOMInput', () => {
     expect(() => {
       ReactDOM.render(<input type="text" value="" />, container);
     }).toErrorDev(
-      'Failed prop type: You provided a `value` prop to a form field without an `onChange` handler.',
+      'Warning: You provided a `value` prop to a form field without an `onChange` handler.',
     );
   });
 
@@ -70,7 +70,7 @@ describe('ReactDOMInput', () => {
     expect(() => {
       ReactDOM.render(<input type="text" value="0" />, container);
     }).toErrorDev(
-      'Failed prop type: You provided a `value` prop to a form field without an `onChange` handler.',
+      'Warning: You provided a `value` prop to a form field without an `onChange` handler.',
     );
   });
 
@@ -78,7 +78,7 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="checkbox" checked={false} />, container),
     ).toErrorDev(
-      'Failed prop type: You provided a `checked` prop to a form field without an `onChange` handler.',
+      'Warning: You provided a `checked` prop to a form field without an `onChange` handler.',
     );
   });
 
@@ -95,7 +95,7 @@ describe('ReactDOMInput', () => {
         container,
       ),
     ).toErrorDev(
-      'Failed prop type: You provided a `checked` prop to a form field without an `onChange` handler. ' +
+      'Warning: You provided a `checked` prop to a form field without an `onChange` handler. ' +
         'This will render a read-only field. If the field should be mutable use `defaultChecked`. ' +
         'Otherwise, set either `onChange` or `readOnly`.',
     );
@@ -115,13 +115,17 @@ describe('ReactDOMInput', () => {
     ReactDOM.render(<input type="checkbox" checked={undefined} />, container);
   });
 
+  it('should not warn with value and onInput handler', () => {
+    ReactDOM.render(<input value="..." onInput={() => {}} />, container);
+  });
+
   it('should properly control a value even if no event listener exists', () => {
     let node;
 
     expect(() => {
       node = ReactDOM.render(<input type="text" value="lion" />, container);
     }).toErrorDev(
-      'Failed prop type: You provided a `value` prop to a form field without an `onChange` handler.',
+      'Warning: You provided a `value` prop to a form field without an `onChange` handler.',
     );
 
     setUntrackedValue.call(node, 'giraffe');
@@ -179,6 +183,7 @@ describe('ReactDOMInput', () => {
     // bypass the lazy event attachment system so we won't actually test this.
     dispatchEventOnNode(instance.a, 'input');
     dispatchEventOnNode(instance.a, 'blur');
+    dispatchEventOnNode(instance.a, 'focusout');
 
     expect(instance.a.value).toBe('giraffe');
     expect(instance.switchedFocus).toBe(true);
@@ -379,7 +384,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should display `defaultValue` of number 0', () => {
-    let stub = <input type="text" defaultValue={0} />;
+    const stub = <input type="text" defaultValue={0} />;
     const node = ReactDOM.render(stub, container);
 
     expect(node.getAttribute('value')).toBe('0');
@@ -411,14 +416,14 @@ describe('ReactDOMInput', () => {
   });
 
   it('should display "true" for `defaultValue` of `true`', () => {
-    let stub = <input type="text" defaultValue={true} />;
+    const stub = <input type="text" defaultValue={true} />;
     const node = ReactDOM.render(stub, container);
 
     expect(node.value).toBe('true');
   });
 
   it('should display "false" for `defaultValue` of `false`', () => {
-    let stub = <input type="text" defaultValue={false} />;
+    const stub = <input type="text" defaultValue={false} />;
     const node = ReactDOM.render(stub, container);
 
     expect(node.value).toBe('false');
@@ -475,8 +480,7 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="text" defaultValue="1" />, container),
     ).toErrorDev(
-      'A component is changing a controlled input of type ' +
-        'text to be uncontrolled.',
+      'A component is changing a controlled input to be uncontrolled.',
     );
     expect(node.value).toBe('0');
   });
@@ -538,6 +542,102 @@ describe('ReactDOMInput', () => {
     const node = ReactDOM.render(stub, container);
 
     expect(node.value).toBe('foobar');
+  });
+
+  it('should throw for date inputs if `defaultValue` is an object where valueOf() throws', () => {
+    class TemporalLike {
+      valueOf() {
+        // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
+        // See https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
+        throw new TypeError('prod message');
+      }
+      toString() {
+        return '2020-01-01';
+      }
+    }
+    const test = () =>
+      ReactDOM.render(
+        <input defaultValue={new TemporalLike()} type="date" />,
+        container,
+      );
+    expect(() =>
+      expect(test).toThrowError(new TypeError('prod message')),
+    ).toErrorDev(
+      'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
+        'strings, not TemporalLike. This value must be coerced to a string before before using it here.',
+    );
+  });
+
+  it('should throw for text inputs if `defaultValue` is an object where valueOf() throws', () => {
+    class TemporalLike {
+      valueOf() {
+        // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
+        // See https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
+        throw new TypeError('prod message');
+      }
+      toString() {
+        return '2020-01-01';
+      }
+    }
+    const test = () =>
+      ReactDOM.render(
+        <input defaultValue={new TemporalLike()} type="text" />,
+        container,
+      );
+    expect(() =>
+      expect(test).toThrowError(new TypeError('prod message')),
+    ).toErrorDev(
+      'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
+        'strings, not TemporalLike. This value must be coerced to a string before before using it here.',
+    );
+  });
+
+  it('should throw for date inputs if `value` is an object where valueOf() throws', () => {
+    class TemporalLike {
+      valueOf() {
+        // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
+        // See https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
+        throw new TypeError('prod message');
+      }
+      toString() {
+        return '2020-01-01';
+      }
+    }
+    const test = () =>
+      ReactDOM.render(
+        <input value={new TemporalLike()} type="date" onChange={() => {}} />,
+        container,
+      );
+    expect(() =>
+      expect(test).toThrowError(new TypeError('prod message')),
+    ).toErrorDev(
+      'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
+        'strings, not TemporalLike. This value must be coerced to a string before before using it here.',
+    );
+  });
+
+  it('should throw for text inputs if `value` is an object where valueOf() throws', () => {
+    class TemporalLike {
+      valueOf() {
+        // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
+        // See https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
+        throw new TypeError('prod message');
+      }
+      toString() {
+        return '2020-01-01';
+      }
+    }
+    const test = () =>
+      ReactDOM.render(
+        <input value={new TemporalLike()} type="text" onChange={() => {}} />,
+        container,
+      );
+    expect(() =>
+      expect(test).toThrowError(new TypeError('prod message')),
+    ).toErrorDev(
+      'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
+        'strings, not TemporalLike. This value must be coerced to a string before before using it here.',
+    );
   });
 
   it('should display `value` of number 0', () => {
@@ -681,6 +781,7 @@ describe('ReactDOMInput', () => {
       expect(node.hasAttribute('value')).toBe(false);
     } else {
       dispatchEventOnNode(node, 'blur');
+      dispatchEventOnNode(node, 'focusout');
 
       expect(node.value).toBe('0.0');
       expect(node.getAttribute('value')).toBe('0.0');
@@ -854,8 +955,7 @@ describe('ReactDOMInput', () => {
         container,
       ),
     ).toErrorDev(
-      'A component is changing a controlled input of type ' +
-        'submit to be uncontrolled.',
+      'A component is changing a controlled input to be uncontrolled.',
     );
 
     const node = container.firstChild;
@@ -874,8 +974,7 @@ describe('ReactDOMInput', () => {
         container,
       ),
     ).toErrorDev(
-      'A component is changing a controlled input of type ' +
-        'reset to be uncontrolled.',
+      'A component is changing a controlled input to be uncontrolled.',
     );
 
     const node = container.firstChild;
@@ -883,7 +982,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should set a value on a submit input', () => {
-    let stub = <input type="submit" value="banana" />;
+    const stub = <input type="submit" value="banana" />;
     ReactDOM.render(stub, container);
     const node = container.firstChild;
 
@@ -891,7 +990,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should not set an undefined value on a submit input', () => {
-    let stub = <input type="submit" value={undefined} />;
+    const stub = <input type="submit" value={undefined} />;
     ReactDOM.render(stub, container);
     const node = container.firstChild;
 
@@ -904,7 +1003,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should not set an undefined value on a reset input', () => {
-    let stub = <input type="reset" value={undefined} />;
+    const stub = <input type="reset" value={undefined} />;
     ReactDOM.render(stub, container);
     const node = container.firstChild;
 
@@ -917,7 +1016,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should not set a null value on a submit input', () => {
-    let stub = <input type="submit" value={null} />;
+    const stub = <input type="submit" value={null} />;
     expect(() => {
       ReactDOM.render(stub, container);
     }).toErrorDev('`value` prop on `input` should not be null');
@@ -932,7 +1031,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should not set a null value on a reset input', () => {
-    let stub = <input type="reset" value={null} />;
+    const stub = <input type="reset" value={null} />;
     expect(() => {
       ReactDOM.render(stub, container);
     }).toErrorDev('`value` prop on `input` should not be null');
@@ -947,7 +1046,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should set a value on a reset input', () => {
-    let stub = <input type="reset" value="banana" />;
+    const stub = <input type="reset" value="banana" />;
     ReactDOM.render(stub, container);
     const node = container.firstChild;
 
@@ -955,7 +1054,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should set an empty string value on a submit input', () => {
-    let stub = <input type="submit" value="" />;
+    const stub = <input type="submit" value="" />;
     ReactDOM.render(stub, container);
     const node = container.firstChild;
 
@@ -963,7 +1062,7 @@ describe('ReactDOMInput', () => {
   });
 
   it('should set an empty string value on a reset input', () => {
-    let stub = <input type="reset" value="" />;
+    const stub = <input type="reset" value="" />;
     ReactDOM.render(stub, container);
     const node = container.firstChild;
 
@@ -1168,7 +1267,7 @@ describe('ReactDOMInput', () => {
         container,
       ),
     ).toErrorDev(
-      'Warning: Failed prop type: You provided a `value` prop to a form ' +
+      'Warning: You provided a `value` prop to a form ' +
         'field without an `onChange` handler. This will render a read-only ' +
         'field. If the field should be mutable use `defaultValue`. ' +
         'Otherwise, set either `onChange` or `readOnly`.\n' +
@@ -1225,7 +1324,7 @@ describe('ReactDOMInput', () => {
         '(specify either the checked prop, or the defaultChecked prop, but not ' +
         'both). Decide between using a controlled or uncontrolled input ' +
         'element and remove one of these props. More info: ' +
-        'https://fb.me/react-controlled-components',
+        'https://reactjs.org/link/controlled-components',
     );
     ReactDOM.unmountComponentAtNode(container);
 
@@ -1252,7 +1351,7 @@ describe('ReactDOMInput', () => {
         '(specify either the value prop, or the defaultValue prop, but not ' +
         'both). Decide between using a controlled or uncontrolled input ' +
         'element and remove one of these props. More info: ' +
-        'https://fb.me/react-controlled-components',
+        'https://reactjs.org/link/controlled-components',
     );
     ReactDOM.unmountComponentAtNode(container);
 
@@ -1268,10 +1367,11 @@ describe('ReactDOMInput', () => {
     );
     ReactDOM.render(stub, container);
     expect(() => ReactDOM.render(<input type="text" />, container)).toErrorDev(
-      'Warning: A component is changing a controlled input of type text to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1286,10 +1386,11 @@ describe('ReactDOMInput', () => {
     ).toErrorDev([
       '`value` prop on `input` should not be null. ' +
         'Consider using an empty string to clear the component or `undefined` for uncontrolled components',
-      'Warning: A component is changing a controlled input of type text to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     ]);
   });
@@ -1305,10 +1406,11 @@ describe('ReactDOMInput', () => {
         container,
       ),
     ).toErrorDev(
-      'Warning: A component is changing a controlled input of type text to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1319,10 +1421,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="text" value="controlled" />, container),
     ).toErrorDev(
-      'Warning: A component is changing an uncontrolled input of type text to be controlled. ' +
-        'Input elements should not switch from uncontrolled to controlled (or vice versa). ' +
+      'Warning: A component is changing an uncontrolled input to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1336,10 +1439,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="text" value="controlled" />, container),
     ).toErrorDev(
-      'Warning: A component is changing an uncontrolled input of type text to be controlled. ' +
-        'Input elements should not switch from uncontrolled to controlled (or vice versa). ' +
+      'Warning: A component is changing an uncontrolled input to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1352,10 +1456,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="checkbox" />, container),
     ).toErrorDev(
-      'Warning: A component is changing a controlled input of type checkbox to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1368,10 +1473,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="checkbox" checked={null} />, container),
     ).toErrorDev(
-      'Warning: A component is changing a controlled input of type checkbox to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1387,10 +1493,11 @@ describe('ReactDOMInput', () => {
         container,
       ),
     ).toErrorDev(
-      'Warning: A component is changing a controlled input of type checkbox to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1401,10 +1508,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="checkbox" checked={true} />, container),
     ).toErrorDev(
-      'Warning: A component is changing an uncontrolled input of type checkbox to be controlled. ' +
-        'Input elements should not switch from uncontrolled to controlled (or vice versa). ' +
+      'Warning: A component is changing an uncontrolled input to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1415,10 +1523,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="checkbox" checked={true} />, container),
     ).toErrorDev(
-      'Warning: A component is changing an uncontrolled input of type checkbox to be controlled. ' +
-        'Input elements should not switch from uncontrolled to controlled (or vice versa). ' +
+      'Warning: A component is changing an uncontrolled input to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1427,10 +1536,11 @@ describe('ReactDOMInput', () => {
     const stub = <input type="radio" checked={true} onChange={emptyFunction} />;
     ReactDOM.render(stub, container);
     expect(() => ReactDOM.render(<input type="radio" />, container)).toErrorDev(
-      'Warning: A component is changing a controlled input of type radio to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1441,10 +1551,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="radio" checked={null} />, container),
     ).toErrorDev(
-      'Warning: A component is changing a controlled input of type radio to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1455,10 +1566,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="radio" defaultChecked={true} />, container),
     ).toErrorDev(
-      'Warning: A component is changing a controlled input of type radio to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1469,10 +1581,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="radio" checked={true} />, container),
     ).toErrorDev(
-      'Warning: A component is changing an uncontrolled input of type radio to be controlled. ' +
-        'Input elements should not switch from uncontrolled to controlled (or vice versa). ' +
+      'Warning: A component is changing an uncontrolled input to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1483,10 +1596,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="radio" checked={true} />, container),
     ).toErrorDev(
-      'Warning: A component is changing an uncontrolled input of type radio to be controlled. ' +
-        'Input elements should not switch from uncontrolled to controlled (or vice versa). ' +
+      'Warning: A component is changing an uncontrolled input to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1535,10 +1649,11 @@ describe('ReactDOMInput', () => {
     expect(() =>
       ReactDOM.render(<input type="radio" value="value" />, container),
     ).toErrorDev(
-      'Warning: A component is changing a controlled input of type radio to be uncontrolled. ' +
-        'Input elements should not switch from controlled to uncontrolled (or vice versa). ' +
+      'Warning: A component is changing a controlled input to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
         'Decide between using a controlled or uncontrolled input ' +
-        'element for the lifetime of the component. More info: https://fb.me/react-controlled-components\n' +
+        'element for the lifetime of the component. More info: https://reactjs.org/link/controlled-components\n' +
         '    in input (at **)',
     );
   });
@@ -1556,7 +1671,7 @@ describe('ReactDOMInput', () => {
             return value;
           },
           set: function(val) {
-            value = '' + val;
+            value = String(val);
             log.push('set property value');
           },
         });
@@ -1579,25 +1694,13 @@ describe('ReactDOMInput', () => {
       container,
     );
 
-    if (disableInputAttributeSyncing) {
-      expect(log).toEqual([
-        'set attribute type',
-        'set attribute min',
-        'set attribute max',
-        'set attribute step',
-        'set property value',
-      ]);
-    } else {
-      expect(log).toEqual([
-        'set attribute type',
-        'set attribute min',
-        'set attribute max',
-        'set attribute step',
-        'set property value',
-        'set attribute value',
-        'set attribute checked',
-      ]);
-    }
+    expect(log).toEqual([
+      'set attribute type',
+      'set attribute min',
+      'set attribute max',
+      'set attribute step',
+      'set property value',
+    ]);
   });
 
   it('sets value properly with type coming later in props', () => {
@@ -1633,15 +1736,39 @@ describe('ReactDOMInput', () => {
     const originalCreateElement = document.createElement;
     spyOnDevAndProd(document, 'createElement').and.callFake(function(type) {
       const el = originalCreateElement.apply(this, arguments);
-      let value = '';
+      const getDefaultValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'defaultValue',
+      ).get;
+      const setDefaultValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'defaultValue',
+      ).set;
+      const getValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      ).get;
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      ).set;
       if (type === 'input') {
-        Object.defineProperty(el, 'value', {
+        Object.defineProperty(el, 'defaultValue', {
           get: function() {
-            return value;
+            return getDefaultValue.call(this);
           },
           set: function(val) {
-            value = '' + val;
+            log.push(`node.defaultValue = ${strify(val)}`);
+            setDefaultValue.call(this, val);
+          },
+        });
+        Object.defineProperty(el, 'value', {
+          get: function() {
+            return getValue.call(this);
+          },
+          set: function(val) {
             log.push(`node.value = ${strify(val)}`);
+            setValue.call(this, val);
           },
         });
         spyOnDevAndProd(el, 'setAttribute').and.callFake(function(name, val) {
@@ -1656,14 +1783,18 @@ describe('ReactDOMInput', () => {
     if (disableInputAttributeSyncing) {
       expect(log).toEqual([
         'node.setAttribute("type", "date")',
-        'node.setAttribute("value", "1980-01-01")',
+        'node.defaultValue = "1980-01-01"',
+        // TODO: it's possible this reintroduces the bug because we don't assign `value` at all.
+        // Need to check this on mobile Safari and Chrome.
       ]);
     } else {
       expect(log).toEqual([
         'node.setAttribute("type", "date")',
+        // value must be assigned before defaultValue. This fixes an issue where the
+        // visually displayed value of date inputs disappears on mobile Safari and Chrome:
+        // https://github.com/facebook/react/issues/7233
         'node.value = "1980-01-01"',
-        'node.setAttribute("value", "1980-01-01")',
-        'node.setAttribute("checked", "")',
+        'node.defaultValue = "1980-01-01"',
       ]);
     }
   });
@@ -1738,6 +1869,7 @@ describe('ReactDOMInput', () => {
       // be the only way to remove focus in JSDOM
       node.blur();
       dispatchEventOnNode(node, 'blur');
+      dispatchEventOnNode(node, 'focusout');
 
       if (disableInputAttributeSyncing) {
         expect(node.value).toBe('2');
@@ -1763,6 +1895,7 @@ describe('ReactDOMInput', () => {
       // be the only way to remove focus in JSDOM
       node.blur();
       dispatchEventOnNode(node, 'blur');
+      dispatchEventOnNode(node, 'focusout');
 
       expect(node.getAttribute('value')).toBe('1');
     });
@@ -1782,6 +1915,7 @@ describe('ReactDOMInput', () => {
       // be the only way to remove focus in JSDOM
       node.blur();
       dispatchEventOnNode(node, 'blur');
+      dispatchEventOnNode(node, 'focusout');
 
       expect(node.getAttribute('value')).toBe('1');
     });
@@ -1817,8 +1951,7 @@ describe('ReactDOMInput', () => {
 
     it('reverts the value attribute to the initial value', () => {
       expect(renderInputWithStringThenWithUndefined).toErrorDev(
-        'Input elements should not switch from controlled to ' +
-          'uncontrolled (or vice versa).',
+        'A component is changing a controlled input to be uncontrolled.',
       );
       if (disableInputAttributeSyncing) {
         expect(input.getAttribute('value')).toBe(null);
@@ -1829,8 +1962,7 @@ describe('ReactDOMInput', () => {
 
     it('preserves the value property', () => {
       expect(renderInputWithStringThenWithUndefined).toErrorDev(
-        'Input elements should not switch from controlled to ' +
-          'uncontrolled (or vice versa).',
+        'A component is changing a controlled input to be uncontrolled.',
       );
       expect(input.value).toBe('latest');
     });
@@ -1869,8 +2001,7 @@ describe('ReactDOMInput', () => {
         '`value` prop on `input` should not be null. ' +
           'Consider using an empty string to clear the component ' +
           'or `undefined` for uncontrolled components.',
-        'Input elements should not switch from controlled ' +
-          'to uncontrolled (or vice versa).',
+        'A component is changing a controlled input to be uncontrolled.',
       ]);
       if (disableInputAttributeSyncing) {
         expect(input.hasAttribute('value')).toBe(false);
@@ -1884,8 +2015,7 @@ describe('ReactDOMInput', () => {
         '`value` prop on `input` should not be null. ' +
           'Consider using an empty string to clear the component ' +
           'or `undefined` for uncontrolled components.',
-        'Input elements should not switch from controlled ' +
-          'to uncontrolled (or vice versa).',
+        'A component is changing a controlled input to be uncontrolled.',
       ]);
       expect(input.value).toBe('latest');
     });

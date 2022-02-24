@@ -12,14 +12,11 @@ import type {ReactContext} from 'shared/ReactTypes';
 
 import {disableLegacyContext} from 'shared/ReactFeatureFlags';
 import {REACT_CONTEXT_TYPE, REACT_PROVIDER_TYPE} from 'shared/ReactSymbols';
-import ReactSharedInternals from 'shared/ReactSharedInternals';
-import getComponentName from 'shared/getComponentName';
-import checkPropTypes from 'prop-types/checkPropTypes';
+import getComponentNameFromType from 'shared/getComponentNameFromType';
+import checkPropTypes from 'shared/checkPropTypes';
 
-let ReactDebugCurrentFrame;
 let didWarnAboutInvalidateContextType;
 if (__DEV__) {
-  ReactDebugCurrentFrame = ReactSharedInternals.ReactDebugCurrentFrame;
   didWarnAboutInvalidateContextType = new Set();
 }
 
@@ -42,13 +39,7 @@ function maskContext(type, context) {
 
 function checkContextTypes(typeSpecs, values, location: string) {
   if (__DEV__) {
-    checkPropTypes(
-      typeSpecs,
-      values,
-      location,
-      'Component',
-      ReactDebugCurrentFrame.getCurrentStack,
-    );
+    checkPropTypes(typeSpecs, values, location, 'Component');
   }
 }
 
@@ -79,7 +70,7 @@ export function processContext(
     const contextType = type.contextType;
     if (__DEV__) {
       if ('contextType' in (type: any)) {
-        let isValid =
+        const isValid =
           // Allow null for conditional declaration
           contextType === null ||
           (contextType !== undefined &&
@@ -114,7 +105,7 @@ export function processContext(
           console.error(
             '%s defines an invalid contextType. ' +
               'contextType should point to the Context object returned by React.createContext().%s',
-            getComponentName(type) || 'Component',
+            getComponentNameFromType(type) || 'Component',
             addendum,
           );
         }
@@ -130,7 +121,7 @@ export function processContext(
           console.error(
             '%s uses the legacy contextTypes API which is no longer supported. ' +
               'Use React.createContext() with static contextType instead.',
-            getComponentName(type) || 'Unknown',
+            getComponentNameFromType(type) || 'Unknown',
           );
         }
       }
@@ -151,7 +142,7 @@ export function processContext(
           console.error(
             '%s uses the legacy contextTypes API which is no longer supported. ' +
               'Use React.createContext() with React.useContext() instead.',
-            getComponentName(type) || 'Unknown',
+            getComponentNameFromType(type) || 'Unknown',
           );
         }
       }

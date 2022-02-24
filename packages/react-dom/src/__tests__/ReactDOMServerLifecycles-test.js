@@ -115,7 +115,9 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    ReactDOMServer.renderToString(<Component />);
+    expect(() => ReactDOMServer.renderToString(<Component />)).toErrorDev(
+      'Unsafe legacy lifecycles will not be called for components using new component APIs.',
+    );
   });
 
   it('should update instance.state with value returned from getDerivedStateFromProps', () => {
@@ -279,25 +281,27 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<Component />)).toWarnDev(
-      'componentWillMount has been renamed',
+    expect(() => ReactDOMServer.renderToString(<Component />)).toErrorDev(
+      'Unsafe legacy lifecycles will not be called for components using new component APIs.',
     );
   });
 
   it('should warn about deprecated lifecycle hooks', () => {
-    class Component extends React.Component {
+    class MyComponent extends React.Component {
       componentWillMount() {}
       render() {
         return null;
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<Component />)).toWarnDev(
-      'componentWillMount has been renamed',
+    expect(() => ReactDOMServer.renderToString(<MyComponent />)).toWarnDev(
+      'componentWillMount has been renamed, and is not recommended for use. See https://reactjs.org/link/unsafe-component-lifecycles for details.\n\n' +
+        '* Move code from componentWillMount to componentDidMount (preferred in most cases) or the constructor.\n\n' +
+        'Please update the following components: MyComponent',
     );
 
     // De-duped
-    ReactDOMServer.renderToString(<Component />);
+    ReactDOMServer.renderToString(<MyComponent />);
   });
 
   describe('react-lifecycles-compat', () => {

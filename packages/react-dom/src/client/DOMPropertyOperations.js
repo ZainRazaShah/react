@@ -16,9 +16,13 @@ import {
   OVERLOADED_BOOLEAN,
 } from '../shared/DOMProperty';
 import sanitizeURL from '../shared/sanitizeURL';
-import {toStringOrTrustedType} from './ToStringValue';
-import {disableJavaScriptURLs} from 'shared/ReactFeatureFlags';
-import {setAttribute, setAttributeNS} from './setAttribute';
+import {
+  disableJavaScriptURLs,
+  enableTrustedTypesIntegration,
+  enableCustomElementPropertySupport,
+} from 'shared/ReactFeatureFlags';
+import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
+import {getFiberCurrentPropsFromNode} from './ReactDOMComponentTree';
 
 import type {PropertyInfo} from '../shared/DOMProperty';
 
@@ -38,10 +42,18 @@ export function getValueForProperty(
       const {propertyName} = propertyInfo;
       return (node: any)[propertyName];
     } else {
+      // This check protects multiple uses of `expected`, which is why the
+      // react-internal/safe-string-coercion rule is disabled in several spots
+      // below.
+      if (__DEV__) {
+        checkAttributeStringCoercion(expected, name);
+      }
+
       if (!disableJavaScriptURLs && propertyInfo.sanitizeURL) {
         // If we haven't fully disabled javascript: URLs, and if
         // the hydration is successful of a javascript: URL, we
         // still want to warn on the client.
+        // eslint-disable-next-line react-internal/safe-string-coercion
         sanitizeURL('' + (expected: any));
       }
 
@@ -58,6 +70,7 @@ export function getValueForProperty(
           if (shouldRemoveAttribute(name, expected, propertyInfo, false)) {
             return value;
           }
+          // eslint-disable-next-line react-internal/safe-string-coercion
           if (value === '' + (expected: any)) {
             return expected;
           }
@@ -83,6 +96,7 @@ export function getValueForProperty(
 
       if (shouldRemoveAttribute(name, expected, propertyInfo, false)) {
         return stringValue === null ? expected : stringValue;
+        // eslint-disable-next-line react-internal/safe-string-coercion
       } else if (stringValue === '' + (expected: any)) {
         return expected;
       } else {
@@ -110,6 +124,9 @@ export function getValueForAttribute(
       return expected === undefined ? undefined : null;
     }
     const value = node.getAttribute(name);
+    if (__DEV__) {
+      checkAttributeStringCoercion(expected, name);
+    }
     if (value === '' + (expected: any)) {
       return expected;
     }
@@ -134,9 +151,52 @@ export function setValueForProperty(
   if (shouldIgnoreAttribute(name, propertyInfo, isCustomComponentTag)) {
     return;
   }
+
+  if (
+    enableCustomElementPropertySupport &&
+    isCustomComponentTag &&
+    name[0] === 'o' &&
+    name[1] === 'n'
+  ) {
+    let eventName = name.replace(/Capture$/, '');
+    const useCapture = name !== eventName;
+    eventName = eventName.slice(2);
+
+    const prevProps = getFiberCurrentPropsFromNode(node);
+    const prevValue = prevProps != null ? prevProps[name] : null;
+    if (typeof prevValue === 'function') {
+      node.removeEventListener(eventName, prevValue, useCapture);
+    }
+    if (typeof value === 'function') {
+      if (typeof prevValue !== 'function' && prevValue !== null) {
+        // If we previously assigned a non-function type into this node, then
+        // remove it when switching to event listener mode.
+        if (name in (node: any)) {
+          (node: any)[name] = null;
+        } else if (node.hasAttribute(name)) {
+          node.removeAttribute(name);
+        }
+      }
+
+      // $FlowFixMe value can't be casted to EventListener.
+      node.addEventListener(eventName, (value: EventListener), useCapture);
+      return;
+    }
+  }
+
+  if (
+    enableCustomElementPropertySupport &&
+    isCustomComponentTag &&
+    name in (node: any)
+  ) {
+    (node: any)[name] = value;
+    return;
+  }
+
   if (shouldRemoveAttribute(name, value, propertyInfo, isCustomComponentTag)) {
     value = null;
   }
+
   // If the prop isn't in the special list, treat it as a simple attribute.
   if (isCustomComponentTag || propertyInfo === null) {
     if (isAttributeNameSafe(name)) {
@@ -144,7 +204,13 @@ export function setValueForProperty(
       if (value === null) {
         node.removeAttribute(attributeName);
       } else {
-        setAttribute(node, attributeName, toStringOrTrustedType(value));
+        if (__DEV__) {
+          checkAttributeStringCoercion(value, name);
+        }
+        node.setAttribute(
+          attributeName,
+          enableTrustedTypesIntegration ? (value: any) : '' + (value: any),
+        );
       }
     }
     return;
@@ -176,15 +242,22 @@ export function setValueForProperty(
     } else {
       // `setAttribute` with objects becomes only `[object]` in IE8/9,
       // ('' + value) makes it output the correct toString()-value.
-      attributeValue = toStringOrTrustedType(value);
+      if (enableTrustedTypesIntegration) {
+        attributeValue = (value: any);
+      } else {
+        if (__DEV__) {
+          checkAttributeStringCoercion(value, attributeName);
+        }
+        attributeValue = '' + (value: any);
+      }
       if (propertyInfo.sanitizeURL) {
         sanitizeURL(attributeValue.toString());
       }
     }
     if (attributeNamespace) {
-      setAttributeNS(node, attributeNamespace, attributeName, attributeValue);
+      node.setAttributeNS(attributeNamespace, attributeName, attributeValue);
     } else {
-      setAttribute(node, attributeName, attributeValue);
+      node.setAttribute(attributeName, attributeValue);
     }
   }
 }

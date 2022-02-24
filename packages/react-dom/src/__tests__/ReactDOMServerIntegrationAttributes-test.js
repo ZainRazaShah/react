@@ -10,6 +10,7 @@
 'use strict';
 
 const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegrationTestUtils');
+const ReactFeatureFlags = require('shared/ReactFeatureFlags');
 
 let React;
 let ReactDOM;
@@ -36,6 +37,7 @@ const {
   resetModules,
   itRenders,
   clientCleanRender,
+  clientRenderOnServerString,
 } = ReactDOMServerIntegrationUtils(initModules);
 
 describe('ReactDOMServerIntegration', () => {
@@ -396,14 +398,12 @@ describe('ReactDOMServerIntegration', () => {
 
       itRenders('custom properties', async render => {
         const e = await render(<div style={{'--foo': 5}} />);
-        // This seems like an odd way computed properties are exposed in jsdom.
-        // In a real browser we'd read it with e.style.getPropertyValue('--foo')
-        expect(e.style.Foo).toBe('5');
+        expect(e.style.getPropertyValue('--foo')).toBe('5');
       });
 
       itRenders('camel cased custom properties', async render => {
         const e = await render(<div style={{'--someColor': '#000000'}} />);
-        expect(e.style.SomeColor).toBe('#000000');
+        expect(e.style.getPropertyValue('--someColor')).toBe('#000000');
       });
 
       itRenders('no undefined styles', async render => {
@@ -432,36 +432,40 @@ describe('ReactDOMServerIntegration', () => {
           <div
             style={{
               lineClamp: 10,
-              WebkitLineClamp: 10,
-              MozFlexGrow: 10,
-              msFlexGrow: 10,
-              msGridRow: 10,
-              msGridRowEnd: 10,
-              msGridRowSpan: 10,
-              msGridRowStart: 10,
-              msGridColumn: 10,
-              msGridColumnEnd: 10,
-              msGridColumnSpan: 10,
-              msGridColumnStart: 10,
+              // TODO: requires https://github.com/jsdom/cssstyle/pull/112
+              // WebkitLineClamp: 10,
+              // TODO: revisit once cssstyle or jsdom figures out
+              // if they want to support other vendors or not
+              // MozFlexGrow: 10,
+              // msFlexGrow: 10,
+              // msGridRow: 10,
+              // msGridRowEnd: 10,
+              // msGridRowSpan: 10,
+              // msGridRowStart: 10,
+              // msGridColumn: 10,
+              // msGridColumnEnd: 10,
+              // msGridColumnSpan: 10,
+              // msGridColumnStart: 10,
             }}
           />,
         );
 
         expect(style.lineClamp).toBe('10');
-        expect(style.WebkitLineClamp).toBe('10');
-        expect(style.MozFlexGrow).toBe('10');
+        // see comment at inline styles above
+        // expect(style.WebkitLineClamp).toBe('10');
+        // expect(style.MozFlexGrow).toBe('10');
         // jsdom is inconsistent in the style property name
         // it uses on the client and when processing server markup.
         // But it should be there either way.
-        expect(style.MsFlexGrow || style.msFlexGrow).toBe('10');
-        expect(style.MsGridRow || style.msGridRow).toBe('10');
-        expect(style.MsGridRowEnd || style.msGridRowEnd).toBe('10');
-        expect(style.MsGridRowSpan || style.msGridRowSpan).toBe('10');
-        expect(style.MsGridRowStart || style.msGridRowStart).toBe('10');
-        expect(style.MsGridColumn || style.msGridColumn).toBe('10');
-        expect(style.MsGridColumnEnd || style.msGridColumnEnd).toBe('10');
-        expect(style.MsGridColumnSpan || style.msGridColumnSpan).toBe('10');
-        expect(style.MsGridColumnStart || style.msGridColumnStart).toBe('10');
+        //expect(style.MsFlexGrow || style.msFlexGrow).toBe('10');
+        // expect(style.MsGridRow || style.msGridRow).toBe('10');
+        // expect(style.MsGridRowEnd || style.msGridRowEnd).toBe('10');
+        // expect(style.MsGridRowSpan || style.msGridRowSpan).toBe('10');
+        // expect(style.MsGridRowStart || style.msGridRowStart).toBe('10');
+        // expect(style.MsGridColumn || style.msGridColumn).toBe('10');
+        // expect(style.MsGridColumnEnd || style.msGridColumnEnd).toBe('10');
+        // expect(style.MsGridColumnSpan || style.msGridColumnSpan).toBe('10');
+        // expect(style.MsGridColumnStart || style.msGridColumnStart).toBe('10');
       });
     });
 
@@ -636,10 +640,7 @@ describe('ReactDOMServerIntegration', () => {
     });
 
     itRenders('no unknown events', async render => {
-      const e = await render(
-        <div onunknownevent="alert(&quot;hack&quot;)" />,
-        1,
-      );
+      const e = await render(<div onunknownevent='alert("hack")' />, 1);
       expect(e.getAttribute('onunknownevent')).toBe(null);
     });
 
@@ -658,17 +659,28 @@ describe('ReactDOMServerIntegration', () => {
     });
 
     itRenders('className for custom elements', async render => {
-      const e = await render(<div is="custom-element" className="test" />, 0);
-      expect(e.getAttribute('className')).toBe('test');
+      if (ReactFeatureFlags.enableCustomElementPropertySupport) {
+        const e = await render(
+          <div is="custom-element" className="test" />,
+          render === clientRenderOnServerString ? 1 : 0,
+        );
+        expect(e.getAttribute('className')).toBe(null);
+        expect(e.getAttribute('class')).toBe('test');
+      } else {
+        const e = await render(<div is="custom-element" className="test" />, 0);
+        expect(e.getAttribute('className')).toBe('test');
+      }
     });
 
     itRenders('htmlFor attribute on custom elements', async render => {
       const e = await render(<div is="custom-element" htmlFor="test" />);
       expect(e.getAttribute('htmlFor')).toBe('test');
+      expect(e.getAttribute('for')).toBe(null);
     });
 
     itRenders('for attribute on custom elements', async render => {
       const e = await render(<div is="custom-element" for="test" />);
+      expect(e.getAttribute('htmlFor')).toBe(null);
       expect(e.getAttribute('for')).toBe('test');
     });
 

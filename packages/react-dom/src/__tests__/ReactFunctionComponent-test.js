@@ -136,7 +136,7 @@ describe('ReactFunctionComponent', () => {
     );
   });
 
-  it('should throw when stateless component returns undefined', () => {
+  it('should not throw when stateless component returns undefined', () => {
     function NotAComponent() {}
     expect(function() {
       ReactTestUtils.renderIntoDocument(
@@ -144,10 +144,7 @@ describe('ReactFunctionComponent', () => {
           <NotAComponent />
         </div>,
       );
-    }).toThrowError(
-      'NotAComponent(...): Nothing was returned from render. ' +
-        'This usually means a return statement is missing. Or, to render nothing, return null.',
-    );
+    }).not.toThrowError();
   });
 
   it('should throw on string refs in pure functions', () => {
@@ -159,15 +156,15 @@ describe('ReactFunctionComponent', () => {
       ReactTestUtils.renderIntoDocument(<Child test="test" />);
     }).toThrowError(
       __DEV__
-        ? 'Function components cannot have refs.'
+        ? 'Function components cannot have string refs. We recommend using useRef() instead.'
         : // It happens because we don't save _owner in production for
           // function components.
           'Element ref was specified as a string (me) but no owner was set. This could happen for one of' +
-          ' the following reasons:\n' +
-          '1. You may be adding a ref to a function component\n' +
-          "2. You may be adding a ref to a component that was not created inside a component's render method\n" +
-          '3. You have multiple copies of React loaded\n' +
-          'See https://fb.me/react-refs-must-have-owner for more information.',
+            ' the following reasons:\n' +
+            '1. You may be adding a ref to a function component\n' +
+            "2. You may be adding a ref to a component that was not created inside a component's render method\n" +
+            '3. You have multiple copies of React loaded\n' +
+            'See https://reactjs.org/link/refs-must-have-owner for more information.',
     );
   });
 
@@ -284,10 +281,8 @@ describe('ReactFunctionComponent', () => {
     }).toErrorDev('Warning: Function components cannot be given refs.');
     // Should be deduped (same internal instance, no additional warnings)
     instance2.forceUpdate();
-    // Could not be deduped (different internal instance):
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(<AnonymousParentNotUsingJSX />),
-    ).toErrorDev('Warning: Function components cannot be given refs.');
+    // Could not be differentiated (since owner is anonymous and no source location)
+    ReactTestUtils.renderIntoDocument(<AnonymousParentNotUsingJSX />);
 
     // When owner doesn't use JSX, but is named, we warn once per owner name
     class NamedParentNotUsingJSX extends React.Component {

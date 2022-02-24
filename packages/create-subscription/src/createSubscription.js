@@ -7,8 +7,7 @@
  * @flow
  */
 
-import React from 'react';
-import invariant from 'shared/invariant';
+import * as React from 'react';
 
 type Unsubscribe = () => void;
 
@@ -29,10 +28,10 @@ export function createSubscription<Property, Value>(
       callback: (value: Value | void) => void,
     ) => Unsubscribe,
   |}>,
-): React$ComponentType<{
+): React$ComponentType<{|
   children: (value: Value | void) => React$Node,
   source: Property,
-}> {
+|}> {
   const {getCurrentValue, subscribe} = config;
 
   if (__DEV__) {
@@ -44,14 +43,14 @@ export function createSubscription<Property, Value>(
     }
   }
 
-  type Props = {
+  type Props = {|
     children: (value: Value) => React$Element<any>,
     source: Property,
-  };
-  type State = {
+  |};
+  type State = {|
     source: Property,
     value: Value | void,
-  };
+  |};
 
   // Reference: https://gist.github.com/bvaughn/d569177d70b50b58bff69c3c4a5353f3
   class Subscription extends React.Component<Props, State> {
@@ -128,10 +127,12 @@ export function createSubscription<Property, Value>(
 
         // Store the unsubscribe method for later (in case the subscribable prop changes).
         const unsubscribe = subscribe(source, callback);
-        invariant(
-          typeof unsubscribe === 'function',
-          'A subscription must return an unsubscribe function.',
-        );
+
+        if (typeof unsubscribe !== 'function') {
+          throw new Error(
+            'A subscription must return an unsubscribe function.',
+          );
+        }
 
         // It's safe to store unsubscribe on the instance because
         // We only read or write that property during the "commit" phase.

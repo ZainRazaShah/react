@@ -16,15 +16,17 @@ describe('ProfilingCache', () => {
   let React;
   let ReactDOM;
   let Scheduler;
-  let SchedulerTracing;
   let TestRenderer: ReactTestRenderer;
   let bridge: FrontendBridge;
+  let legacyRender;
   let store: Store;
   let utils;
 
   beforeEach(() => {
     utils = require('./utils');
     utils.beforeEachProfiling();
+
+    legacyRender = utils.legacyRender;
 
     bridge = global.bridge;
     store = global.store;
@@ -35,7 +37,6 @@ describe('ProfilingCache', () => {
     React = require('react');
     ReactDOM = require('react-dom');
     Scheduler = require('scheduler');
-    SchedulerTracing = require('scheduler/tracing');
     TestRenderer = utils.requireTestRenderer();
   });
 
@@ -62,17 +63,17 @@ describe('ProfilingCache', () => {
     const containerB = document.createElement('div');
     const containerC = document.createElement('div');
 
-    utils.act(() => ReactDOM.render(<Parent count={2} />, containerA));
-    utils.act(() => ReactDOM.render(<Parent count={1} />, containerB));
+    utils.act(() => legacyRender(<Parent count={2} />, containerA));
+    utils.act(() => legacyRender(<Parent count={1} />, containerB));
     utils.act(() => store.profilerStore.startProfiling());
-    utils.act(() => ReactDOM.render(<Parent count={3} />, containerA));
-    utils.act(() => ReactDOM.render(<Parent count={1} />, containerC));
-    utils.act(() => ReactDOM.render(<Parent count={1} />, containerA));
+    utils.act(() => legacyRender(<Parent count={3} />, containerA));
+    utils.act(() => legacyRender(<Parent count={1} />, containerC));
+    utils.act(() => legacyRender(<Parent count={1} />, containerA));
     utils.act(() => ReactDOM.unmountComponentAtNode(containerB));
-    utils.act(() => ReactDOM.render(<Parent count={0} />, containerA));
+    utils.act(() => legacyRender(<Parent count={0} />, containerA));
     utils.act(() => store.profilerStore.stopProfiling());
 
-    let allProfilingDataForRoots = [];
+    const allProfilingDataForRoots = [];
 
     function Validator({previousProfilingDataForRoot, rootID}) {
       const profilingDataForRoot = store.profilerStore.getDataForRoot(rootID);
@@ -107,7 +108,10 @@ describe('ProfilingCache', () => {
       });
     }
 
-    expect(allProfilingDataForRoots).toHaveLength(3);
+    // No profiling data gets logged for the 2nd root (container B)
+    // because it doesn't render anything while profiling.
+    // (Technically it unmounts but we don't profile root unmounts.)
+    expect(allProfilingDataForRoots).toHaveLength(2);
 
     utils.exportImportHelper(bridge, store);
 
@@ -145,10 +149,10 @@ describe('ProfilingCache', () => {
     const container = document.createElement('div');
 
     utils.act(() => store.profilerStore.startProfiling());
-    utils.act(() => ReactDOM.render(<Parent count={2} />, container));
-    utils.act(() => ReactDOM.render(<Parent count={3} />, container));
-    utils.act(() => ReactDOM.render(<Parent count={1} />, container));
-    utils.act(() => ReactDOM.render(<Parent count={0} />, container));
+    utils.act(() => legacyRender(<Parent count={2} />, container));
+    utils.act(() => legacyRender(<Parent count={3} />, container));
+    utils.act(() => legacyRender(<Parent count={1} />, container));
+    utils.act(() => legacyRender(<Parent count={0} />, container));
     utils.act(() => store.profilerStore.stopProfiling());
 
     const allCommitData = [];
@@ -250,16 +254,16 @@ describe('ProfilingCache', () => {
     const container = document.createElement('div');
 
     utils.act(() => store.profilerStore.startProfiling());
-    utils.act(() => ReactDOM.render(<LegacyContextProvider />, container));
+    utils.act(() => legacyRender(<LegacyContextProvider />, container));
     expect(instance).not.toBeNull();
     utils.act(() => (instance: any).setState({count: 1}));
     utils.act(() =>
-      ReactDOM.render(<LegacyContextProvider foo={123} />, container),
+      legacyRender(<LegacyContextProvider foo={123} />, container),
     );
     utils.act(() =>
-      ReactDOM.render(<LegacyContextProvider bar="abc" />, container),
+      legacyRender(<LegacyContextProvider bar="abc" />, container),
     );
-    utils.act(() => ReactDOM.render(<LegacyContextProvider />, container));
+    utils.act(() => legacyRender(<LegacyContextProvider />, container));
     utils.act(() => store.profilerStore.stopProfiling());
 
     const allCommitData = [];
@@ -308,6 +312,148 @@ describe('ProfilingCache', () => {
     }
   });
 
+  it('should properly detect changed hooks', () => {
+    const Context = React.createContext(0);
+    const Context2 = React.createContext(0);
+
+    function reducer(state, action) {
+      switch (action.type) {
+        case 'invert':
+          return {value: !state.value};
+        default:
+          throw new Error();
+      }
+    }
+
+    let dispatch = null;
+    let setState = null;
+
+    const Component = ({count, string}) => {
+      // These hooks may change and initiate re-renders.
+      setState = React.useState('abc')[1];
+      dispatch = React.useReducer(reducer, {value: true})[1];
+
+      // This hook's return value may change between renders,
+      // but the hook itself isn't stateful.
+      React.useContext(Context);
+      React.useContext(Context2);
+
+      // These hooks and their dependencies may not change between renders.
+      // We're using them to ensure that they don't trigger false positives.
+      React.useCallback(() => () => {}, [string]);
+      React.useMemo(() => string, [string]);
+
+      // These hooks never "change".
+      React.useEffect(() => {}, [string]);
+      React.useLayoutEffect(() => {}, [string]);
+
+      return null;
+    };
+
+    const container = document.createElement('div');
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() =>
+      legacyRender(
+        <Context.Provider value={true}>
+          <Context2.Provider value={true}>
+            <Component count={1} />
+          </Context2.Provider>
+        </Context.Provider>,
+        container,
+      ),
+    );
+
+    // Second render has no changed hooks, only changed props.
+    utils.act(() =>
+      legacyRender(
+        <Context.Provider value={true}>
+          <Context2.Provider value={true}>
+            <Component count={2} />
+          </Context2.Provider>
+        </Context.Provider>,
+        container,
+      ),
+    );
+
+    // Third render has a changed reducer hook
+    utils.act(() => dispatch({type: 'invert'}));
+
+    // Fourth render has a changed state hook
+    utils.act(() => setState('def'));
+
+    // Fifth render has a changed context value for context 1, but no changed hook.
+    utils.act(() =>
+      legacyRender(
+        <Context.Provider value={false}>
+          <Context2.Provider value={true}>
+            <Component count={2} />
+          </Context2.Provider>
+        </Context.Provider>,
+        container,
+      ),
+    );
+
+    // Sixth render has another changed context value for context 2, but no changed hook.
+    utils.act(() =>
+      legacyRender(
+        <Context.Provider value={false}>
+          <Context2.Provider value={false}>
+            <Component count={2} />
+          </Context2.Provider>
+        </Context.Provider>,
+        container,
+      ),
+    );
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const allCommitData = [];
+
+    function Validator({commitIndex, previousCommitDetails, rootID}) {
+      const commitData = store.profilerStore.getCommitData(rootID, commitIndex);
+      if (previousCommitDetails != null) {
+        expect(commitData).toEqual(previousCommitDetails);
+      } else {
+        allCommitData.push(commitData);
+        expect(commitData).toMatchSnapshot(
+          `CommitDetails commitIndex: ${commitIndex}`,
+        );
+      }
+      return null;
+    }
+
+    const rootID = store.roots[0];
+
+    for (let commitIndex = 0; commitIndex < 6; commitIndex++) {
+      utils.act(() => {
+        TestRenderer.create(
+          <Validator
+            commitIndex={commitIndex}
+            previousCommitDetails={null}
+            rootID={rootID}
+          />,
+        );
+      });
+    }
+
+    expect(allCommitData).toHaveLength(6);
+
+    // Export and re-import profile data and make sure it is retained.
+    utils.exportImportHelper(bridge, store);
+
+    for (let commitIndex = 0; commitIndex < 6; commitIndex++) {
+      utils.act(() => {
+        TestRenderer.create(
+          <Validator
+            commitIndex={commitIndex}
+            previousCommitDetails={allCommitData[commitIndex]}
+            rootID={rootID}
+          />,
+        );
+      });
+    }
+  });
+
   it('should calculate a self duration based on actual children (not filtered children)', () => {
     store.componentFilters = [utils.createDisplayNameFilter('^Parent$')];
 
@@ -331,7 +477,7 @@ describe('ProfilingCache', () => {
 
     utils.act(() => store.profilerStore.startProfiling());
     utils.act(() =>
-      ReactDOM.render(<Grandparent />, document.createElement('div')),
+      legacyRender(<Grandparent />, document.createElement('div')),
     );
     utils.act(() => store.profilerStore.stopProfiling());
 
@@ -354,7 +500,7 @@ describe('ProfilingCache', () => {
     expect(commitData).not.toBeNull();
   });
 
-  it('should calculate self duration correctly for suspended views', async done => {
+  it('should calculate self duration correctly for suspended views', async () => {
     let data;
     const getData = () => {
       if (data) {
@@ -386,7 +532,7 @@ describe('ProfilingCache', () => {
 
     utils.act(() => store.profilerStore.startProfiling());
     await utils.actAsync(() =>
-      ReactDOM.render(<Parent />, document.createElement('div')),
+      legacyRender(<Parent />, document.createElement('div')),
     );
     utils.act(() => store.profilerStore.stopProfiling());
 
@@ -412,8 +558,6 @@ describe('ProfilingCache', () => {
     }
 
     expect(allCommitData).toHaveLength(2);
-
-    done();
   });
 
   it('should collect data for each rendered fiber', () => {
@@ -438,9 +582,9 @@ describe('ProfilingCache', () => {
     const container = document.createElement('div');
 
     utils.act(() => store.profilerStore.startProfiling());
-    utils.act(() => ReactDOM.render(<Parent count={1} />, container));
-    utils.act(() => ReactDOM.render(<Parent count={2} />, container));
-    utils.act(() => ReactDOM.render(<Parent count={3} />, container));
+    utils.act(() => legacyRender(<Parent count={1} />, container));
+    utils.act(() => legacyRender(<Parent count={2} />, container));
+    utils.act(() => legacyRender(<Parent count={3} />, container));
     utils.act(() => store.profilerStore.stopProfiling());
 
     const allFiberCommits = [];
@@ -500,76 +644,205 @@ describe('ProfilingCache', () => {
     }
   });
 
-  it('should report every traced interaction', () => {
-    const Parent = ({count}) => {
-      Scheduler.unstable_advanceTime(10);
-      const children = new Array(count)
-        .fill(true)
-        .map((_, index) => <Child key={index} duration={index} />);
-      return (
-        <React.Fragment>
-          {children}
-          <MemoizedChild duration={1} />
-        </React.Fragment>
-      );
-    };
-    const Child = ({duration}) => {
-      Scheduler.unstable_advanceTime(duration);
-      return null;
-    };
-    const MemoizedChild = React.memo(Child);
-
+  it('should handle unexpectedly shallow suspense trees', () => {
     const container = document.createElement('div');
 
     utils.act(() => store.profilerStore.startProfiling());
-    utils.act(() =>
-      SchedulerTracing.unstable_trace(
-        'mount: one child',
-        Scheduler.unstable_now(),
-        () => ReactDOM.render(<Parent count={1} />, container),
-      ),
-    );
-    utils.act(() =>
-      SchedulerTracing.unstable_trace(
-        'update: two children',
-        Scheduler.unstable_now(),
-        () => ReactDOM.render(<Parent count={2} />, container),
-      ),
-    );
+    utils.act(() => legacyRender(<React.Suspense />, container));
     utils.act(() => store.profilerStore.stopProfiling());
 
-    let interactions = null;
-
-    function Validator({previousInteractions, rootID}) {
-      interactions = store.profilerStore.profilingCache.getInteractionsChartData(
-        {
-          rootID,
-        },
-      ).interactions;
-      if (previousInteractions != null) {
-        expect(interactions).toEqual(previousInteractions);
-      } else {
-        expect(interactions).toMatchSnapshot('Interactions');
-      }
+    function Validator({commitIndex, rootID}) {
+      const profilingDataForRoot = store.profilerStore.getDataForRoot(rootID);
+      expect(profilingDataForRoot).toMatchSnapshot('Empty Suspense node');
       return null;
     }
 
     const rootID = store.roots[0];
 
-    utils.act(() =>
-      TestRenderer.create(
-        <Validator previousInteractions={null} rootID={rootID} />,
-      ),
-    );
+    utils.act(() => {
+      TestRenderer.create(<Validator commitIndex={0} rootID={rootID} />);
+    });
+  });
 
-    expect(interactions).not.toBeNull();
+  // See https://github.com/facebook/react/issues/18831
+  it('should not crash during route transitions with Suspense', () => {
+    const RouterContext = React.createContext();
 
-    utils.exportImportHelper(bridge, store);
+    function App() {
+      return (
+        <Router>
+          <Switch>
+            <Route path="/">
+              <Home />
+            </Route>
+            <Route path="/about">
+              <About />
+            </Route>
+          </Switch>
+        </Router>
+      );
+    }
 
-    utils.act(() =>
-      TestRenderer.create(
-        <Validator previousInteractions={interactions} rootID={rootID} />,
-      ),
-    );
+    const Home = () => {
+      return (
+        <React.Suspense>
+          <Link path="/about">Home</Link>
+        </React.Suspense>
+      );
+    };
+
+    const About = () => <div>About</div>;
+
+    // Mimics https://github.com/ReactTraining/react-router/blob/master/packages/react-router/modules/Router.js
+    function Router({children}) {
+      const [path, setPath] = React.useState('/');
+      return (
+        <RouterContext.Provider value={{path, setPath}}>
+          {children}
+        </RouterContext.Provider>
+      );
+    }
+
+    // Mimics https://github.com/ReactTraining/react-router/blob/master/packages/react-router/modules/Switch.js
+    function Switch({children}) {
+      return (
+        <RouterContext.Consumer>
+          {context => {
+            let element = null;
+            React.Children.forEach(children, child => {
+              if (context.path === child.props.path) {
+                element = child.props.children;
+              }
+            });
+            return element ? React.cloneElement(element) : null;
+          }}
+        </RouterContext.Consumer>
+      );
+    }
+
+    // Mimics https://github.com/ReactTraining/react-router/blob/master/packages/react-router/modules/Route.js
+    function Route({children, path}) {
+      return null;
+    }
+
+    const linkRef = React.createRef();
+
+    // Mimics https://github.com/ReactTraining/react-router/blob/master/packages/react-router-dom/modules/Link.js
+    function Link({children, path}) {
+      return (
+        <RouterContext.Consumer>
+          {context => {
+            return (
+              <button ref={linkRef} onClick={() => context.setPath(path)}>
+                {children}
+              </button>
+            );
+          }}
+        </RouterContext.Consumer>
+      );
+    }
+
+    const {Simulate} = require('react-dom/test-utils');
+
+    const container = document.createElement('div');
+    utils.act(() => legacyRender(<App />, container));
+    expect(container.textContent).toBe('Home');
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => Simulate.click(linkRef.current));
+    utils.act(() => store.profilerStore.stopProfiling());
+    expect(container.textContent).toBe('About');
+  });
+
+  it('components that were deleted and added to updaters during the layout phase should not crash', () => {
+    let setChildUnmounted;
+    function Child() {
+      const [, setState] = React.useState(false);
+
+      React.useLayoutEffect(() => {
+        return () => setState(true);
+      });
+
+      return null;
+    }
+
+    function App() {
+      const [childUnmounted, _setChildUnmounted] = React.useState(false);
+      setChildUnmounted = _setChildUnmounted;
+      return <>{!childUnmounted && <Child />}</>;
+    }
+
+    const root = ReactDOM.createRoot(document.createElement('div'));
+    utils.act(() => root.render(<App />));
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => setChildUnmounted(true));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const updaters = store.profilerStore.getCommitData(store.roots[0], 0)
+      .updaters;
+    expect(updaters.length).toEqual(1);
+    expect(updaters[0].displayName).toEqual('App');
+  });
+
+  it('components in a deleted subtree and added to updaters during the layout phase should not crash', () => {
+    let setChildUnmounted;
+    function Child() {
+      return <GrandChild />;
+    }
+
+    function GrandChild() {
+      const [, setState] = React.useState(false);
+
+      React.useLayoutEffect(() => {
+        return () => setState(true);
+      });
+
+      return null;
+    }
+
+    function App() {
+      const [childUnmounted, _setChildUnmounted] = React.useState(false);
+      setChildUnmounted = _setChildUnmounted;
+      return <>{!childUnmounted && <Child />}</>;
+    }
+
+    const root = ReactDOM.createRoot(document.createElement('div'));
+    utils.act(() => root.render(<App />));
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => setChildUnmounted(true));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const updaters = store.profilerStore.getCommitData(store.roots[0], 0)
+      .updaters;
+    expect(updaters.length).toEqual(1);
+    expect(updaters[0].displayName).toEqual('App');
+  });
+
+  it('components that were deleted should not be added to updaters during the passive phase', () => {
+    let setChildUnmounted;
+    function Child() {
+      const [, setState] = React.useState(false);
+      React.useEffect(() => {
+        return () => setState(true);
+      });
+
+      return null;
+    }
+
+    function App() {
+      const [childUnmounted, _setChildUnmounted] = React.useState(false);
+      setChildUnmounted = _setChildUnmounted;
+      return <>{!childUnmounted && <Child />}</>;
+    }
+
+    const root = ReactDOM.createRoot(document.createElement('div'));
+    utils.act(() => root.render(<App />));
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => setChildUnmounted(true));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const updaters = store.profilerStore.getCommitData(store.roots[0], 0)
+      .updaters;
+    expect(updaters.length).toEqual(1);
+    expect(updaters[0].displayName).toEqual('App');
   });
 });

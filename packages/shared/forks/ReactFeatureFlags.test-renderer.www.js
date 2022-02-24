@@ -7,45 +7,72 @@
  * @flow
  */
 
-import invariant from 'shared/invariant';
-
 import typeof * as FeatureFlagsType from 'shared/ReactFeatureFlags';
-import typeof * as PersistentFeatureFlagsType from './ReactFeatureFlags.persistent';
+import typeof * as ExportsType from './ReactFeatureFlags.test-renderer.www';
 
 export const debugRenderPhaseSideEffectsForStrictMode = false;
-export const enableUserTimingAPI = __DEV__;
+export const enableDebugTracing = false;
+export const enableSchedulingProfiler = false;
 export const warnAboutDeprecatedLifecycles = true;
 export const replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
 export const enableProfilerTimer = __PROFILE__;
-export const enableSchedulerTracing = __PROFILE__;
+export const enableProfilerCommitHooks = __PROFILE__;
+export const enableProfilerNestedUpdatePhase = __PROFILE__;
+export const enableProfilerNestedUpdateScheduledHook = false;
+export const enableUpdaterTracking = false;
 export const enableSuspenseServerRenderer = false;
 export const enableSelectiveHydration = false;
-export const enableChunksAPI = false;
-export const exposeConcurrentModeAPIs = __EXPERIMENTAL__;
+export const enableLazyElements = false;
+export const enableCache = true;
 export const enableSchedulerDebugging = false;
 export const disableJavaScriptURLs = false;
-export const enableDeprecatedFlareAPI = true;
-export const enableFundamentalAPI = false;
+export const disableCommentsAsDOMContainers = true;
+export const disableInputAttributeSyncing = false;
 export const enableScopeAPI = true;
-export const enableJSXTransformAPI = true;
-export const warnAboutUnmockedScheduler = true;
-export const flushSuspenseFallbacksInTests = true;
+export const enableCreateEventHandleAPI = false;
 export const enableSuspenseCallback = true;
 export const warnAboutDefaultPropsOnFunctionComponents = false;
 export const warnAboutStringRefs = false;
 export const disableLegacyContext = false;
 export const disableSchedulerTimeoutBasedOnReactExpirationTime = false;
-export const enableTrainModelFix = false;
 export const enableTrustedTypesIntegration = false;
-export const enableNativeTargetAsInstance = false;
+export const disableTextareaChildren = false;
+export const disableModulePatternComponents = true;
+export const warnAboutSpreadingKeyToJSX = false;
+export const enableSuspenseAvoidThisFallback = true;
+export const enableSuspenseAvoidThisFallbackFizz = false;
+export const enableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay = true;
+export const enableClientRenderFallbackOnHydrationMismatch = true;
+export const enableComponentStackLocations = true;
+export const enableLegacyFBSupport = false;
+export const enableFilterEmptyStringAttributesDOM = false;
+export const disableNativeComponentFrames = false;
+export const deletedTreeCleanUpLevel = 3;
+export const enableSuspenseLayoutEffectSemantics = false;
+export const enableGetInspectorDataForInstanceInProduction = false;
+export const enableNewReconciler = false;
+export const deferRenderPhaseUpdateToNextBatch = false;
 
-// Only used in www builds.
-export function addUserTimingListener() {
-  invariant(false, 'Not implemented.');
-}
+export const enableStrictEffects = true;
+export const createRootStrictEffectsByDefault = false;
+export const enableUseRefAccessWarning = false;
+
+export const disableSchedulerTimeoutInWorkLoop = false;
+export const enableLazyContextPropagation = false;
+export const enableSyncDefaultUpdates = true;
+export const allowConcurrentByDefault = true;
+export const enablePersistentOffscreenHostContainer = false;
+export const enableCustomElementPropertySupport = false;
+
+export const consoleManagedByDevToolsDuringStrictMode = false;
+
+// Some www surfaces are still using this. Remove once they have been migrated.
+export const enableUseMutableSource = true;
+
+export const enableTransitionTracing = false;
 
 // Flow magic to verify the exports of this file match the original version.
 // eslint-disable-next-line no-unused-vars
 type Check<_X, Y: _X, X: Y = _X> = null;
 // eslint-disable-next-line no-unused-expressions
-(null: Check<PersistentFeatureFlagsType, FeatureFlagsType>);
+(null: Check<ExportsType, FeatureFlagsType>);

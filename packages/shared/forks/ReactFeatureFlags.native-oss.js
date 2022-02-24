@@ -7,47 +7,70 @@
  * @flow
  */
 
-import invariant from 'shared/invariant';
-
 import typeof * as FeatureFlagsType from 'shared/ReactFeatureFlags';
-import typeof * as FeatureFlagsShimType from './ReactFeatureFlags.native-oss';
+import typeof * as ExportsType from './ReactFeatureFlags.native-oss';
 
 export const debugRenderPhaseSideEffectsForStrictMode = false;
-export const enableUserTimingAPI = __DEV__;
+export const enableDebugTracing = false;
+export const enableSchedulingProfiler = false;
 export const replayFailedUnitOfWorkWithInvokeGuardedCallback = __DEV__;
 export const warnAboutDeprecatedLifecycles = true;
 export const enableProfilerTimer = __PROFILE__;
-export const enableSchedulerTracing = __PROFILE__;
+export const enableProfilerCommitHooks = __PROFILE__;
+export const enableProfilerNestedUpdatePhase = __PROFILE__;
+export const enableProfilerNestedUpdateScheduledHook = false;
+export const enableUpdaterTracking = __PROFILE__;
 export const enableSuspenseServerRenderer = false;
 export const enableSelectiveHydration = false;
-export const enableChunksAPI = false;
+export const enableLazyElements = false;
+export const enableCache = false;
 export const disableJavaScriptURLs = false;
+export const disableCommentsAsDOMContainers = true;
 export const disableInputAttributeSyncing = false;
-export const exposeConcurrentModeAPIs = __EXPERIMENTAL__;
-export const warnAboutShorthandPropertyCollision = false;
 export const enableSchedulerDebugging = false;
-export const enableDeprecatedFlareAPI = false;
-export const enableFundamentalAPI = false;
 export const enableScopeAPI = false;
-export const enableJSXTransformAPI = false;
-export const warnAboutUnmockedScheduler = false;
-export const flushSuspenseFallbacksInTests = true;
+export const enableCreateEventHandleAPI = false;
 export const enableSuspenseCallback = false;
 export const warnAboutDefaultPropsOnFunctionComponents = false;
 export const warnAboutStringRefs = false;
 export const disableLegacyContext = false;
 export const disableSchedulerTimeoutBasedOnReactExpirationTime = false;
-export const enableTrainModelFix = false;
 export const enableTrustedTypesIntegration = false;
-export const enableNativeTargetAsInstance = false;
+export const disableTextareaChildren = false;
+export const disableModulePatternComponents = false;
+export const warnAboutSpreadingKeyToJSX = false;
+export const enableSuspenseAvoidThisFallback = false;
+export const enableSuspenseAvoidThisFallbackFizz = false;
+export const enableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay = true;
+export const enableClientRenderFallbackOnHydrationMismatch = true;
+export const enableComponentStackLocations = false;
+export const enableLegacyFBSupport = false;
+export const enableFilterEmptyStringAttributesDOM = false;
+export const disableNativeComponentFrames = false;
+export const deletedTreeCleanUpLevel = 3;
+export const enableSuspenseLayoutEffectSemantics = false;
+export const enableGetInspectorDataForInstanceInProduction = false;
+export const enableNewReconciler = false;
+export const deferRenderPhaseUpdateToNextBatch = false;
 
-// Only used in www builds.
-export function addUserTimingListener() {
-  invariant(false, 'Not implemented.');
-}
+export const enableStrictEffects = false;
+export const createRootStrictEffectsByDefault = false;
+export const enableUseRefAccessWarning = false;
+
+export const disableSchedulerTimeoutInWorkLoop = false;
+export const enableLazyContextPropagation = false;
+export const enableSyncDefaultUpdates = true;
+export const allowConcurrentByDefault = false;
+export const enablePersistentOffscreenHostContainer = false;
+export const enableCustomElementPropertySupport = false;
+
+export const consoleManagedByDevToolsDuringStrictMode = false;
+export const enableUseMutableSource = false;
+
+export const enableTransitionTracing = false;
 
 // Flow magic to verify the exports of this file match the original version.
 // eslint-disable-next-line no-unused-vars
 type Check<_X, Y: _X, X: Y = _X> = null;
 // eslint-disable-next-line no-unused-expressions
-(null: Check<FeatureFlagsShimType, FeatureFlagsType>);
+(null: Check<ExportsType, FeatureFlagsType>);

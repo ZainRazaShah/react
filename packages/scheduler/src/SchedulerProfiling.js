@@ -10,39 +10,8 @@
 import type {PriorityLevel} from './SchedulerPriorities';
 import {enableProfiling} from './SchedulerFeatureFlags';
 
-import {NoPriority} from './SchedulerPriorities';
-
 let runIdCounter: number = 0;
 let mainThreadIdCounter: number = 0;
-
-const profilingStateSize = 4;
-export const sharedProfilingBuffer = enableProfiling
-  ? // $FlowFixMe Flow doesn't know about SharedArrayBuffer
-    typeof SharedArrayBuffer === 'function'
-    ? new SharedArrayBuffer(profilingStateSize * Int32Array.BYTES_PER_ELEMENT)
-    : // $FlowFixMe Flow doesn't know about ArrayBuffer
-      typeof ArrayBuffer === 'function'
-      ? new ArrayBuffer(profilingStateSize * Int32Array.BYTES_PER_ELEMENT)
-      : null // Don't crash the init path on IE9
-  : null;
-
-const profilingState =
-  enableProfiling && sharedProfilingBuffer !== null
-    ? new Int32Array(sharedProfilingBuffer)
-    : []; // We can't read this but it helps save bytes for null checks
-
-const PRIORITY = 0;
-const CURRENT_TASK_ID = 1;
-const CURRENT_RUN_ID = 2;
-const QUEUE_SIZE = 3;
-
-if (enableProfiling) {
-  profilingState[PRIORITY] = NoPriority;
-  // This is maintained with a counter, because the size of the priority queue
-  // array might include canceled tasks.
-  profilingState[QUEUE_SIZE] = 0;
-  profilingState[CURRENT_TASK_ID] = 0;
-}
 
 // Bytes per element is 4
 const INITIAL_EVENT_LOG_SIZE = 131072;
@@ -103,12 +72,14 @@ export function stopLoggingProfilingEvents(): ArrayBuffer | null {
 }
 
 export function markTaskStart(
-  task: {id: number, priorityLevel: PriorityLevel},
+  task: {
+    id: number,
+    priorityLevel: PriorityLevel,
+    ...
+  },
   ms: number,
 ) {
   if (enableProfiling) {
-    profilingState[QUEUE_SIZE]++;
-
     if (eventLog !== null) {
       // performance.now returns a float, representing milliseconds. When the
       // event is logged, it's coerced to an int. Convert to microseconds to
@@ -122,14 +93,11 @@ export function markTaskCompleted(
   task: {
     id: number,
     priorityLevel: PriorityLevel,
+    ...
   },
   ms: number,
 ) {
   if (enableProfiling) {
-    profilingState[PRIORITY] = NoPriority;
-    profilingState[CURRENT_TASK_ID] = 0;
-    profilingState[QUEUE_SIZE]--;
-
     if (eventLog !== null) {
       logEvent([TaskCompleteEvent, ms * 1000, task.id]);
     }
@@ -140,12 +108,11 @@ export function markTaskCanceled(
   task: {
     id: number,
     priorityLevel: PriorityLevel,
+    ...
   },
   ms: number,
 ) {
   if (enableProfiling) {
-    profilingState[QUEUE_SIZE]--;
-
     if (eventLog !== null) {
       logEvent([TaskCancelEvent, ms * 1000, task.id]);
     }
@@ -156,14 +123,11 @@ export function markTaskErrored(
   task: {
     id: number,
     priorityLevel: PriorityLevel,
+    ...
   },
   ms: number,
 ) {
   if (enableProfiling) {
-    profilingState[PRIORITY] = NoPriority;
-    profilingState[CURRENT_TASK_ID] = 0;
-    profilingState[QUEUE_SIZE]--;
-
     if (eventLog !== null) {
       logEvent([TaskErrorEvent, ms * 1000, task.id]);
     }
@@ -171,15 +135,15 @@ export function markTaskErrored(
 }
 
 export function markTaskRun(
-  task: {id: number, priorityLevel: PriorityLevel},
+  task: {
+    id: number,
+    priorityLevel: PriorityLevel,
+    ...
+  },
   ms: number,
 ) {
   if (enableProfiling) {
     runIdCounter++;
-
-    profilingState[PRIORITY] = task.priorityLevel;
-    profilingState[CURRENT_TASK_ID] = task.id;
-    profilingState[CURRENT_RUN_ID] = runIdCounter;
 
     if (eventLog !== null) {
       logEvent([TaskRunEvent, ms * 1000, task.id, runIdCounter]);
@@ -187,12 +151,8 @@ export function markTaskRun(
   }
 }
 
-export function markTaskYield(task: {id: number}, ms: number) {
+export function markTaskYield(task: {id: number, ...}, ms: number) {
   if (enableProfiling) {
-    profilingState[PRIORITY] = NoPriority;
-    profilingState[CURRENT_TASK_ID] = 0;
-    profilingState[CURRENT_RUN_ID] = 0;
-
     if (eventLog !== null) {
       logEvent([TaskYieldEvent, ms * 1000, task.id, runIdCounter]);
     }

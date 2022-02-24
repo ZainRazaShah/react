@@ -213,6 +213,9 @@ function getCanonicalizedValue(value) {
 
 let _didWarn = false;
 function warn(str) {
+  if (str.includes('ReactDOM.render is no longer supported')) {
+    return;
+  }
   _didWarn = true;
 }
 const UNKNOWN_HTML_TAGS = new Set(['keygen', 'time', 'command']);
@@ -461,9 +464,7 @@ function prepareState(initGlobals) {
       hasSameBehaviorForAll,
       rowPatternHash,
       // "Good enough" id that we can store in localStorage
-      rowIdHash: `${attribute.name} ${attribute.tagName} ${
-        attribute.overrideStringValue
-      }`,
+      rowIdHash: `${attribute.name} ${attribute.tagName} ${attribute.overrideStringValue}`,
     };
     const rowGroup = rowPatternHashes.get(rowPatternHash) || new Set();
     rowGroup.add(row);
@@ -527,7 +528,7 @@ function ResultPopover(props) {
     <pre
       css={{
         padding: '1em',
-        width: '25em',
+        minWidth: '25em',
       }}>
       {JSON.stringify(
         {
@@ -725,9 +726,9 @@ class App extends React.Component {
     rowPatternHashes: null,
   };
 
-  renderCell = props => {
+  renderCell = ({key, ...props}) => {
     return (
-      <div style={props.style}>
+      <div key={key} style={props.style}>
         <CellContent
           toggleAttribute={this.toggleAttribute}
           completedHashes={this.state.completedHashes}
@@ -766,7 +767,7 @@ class App extends React.Component {
         'https://unpkg.com/react-dom@latest/umd/react-dom-server.browser.development.js',
       ReactNext: '/react.development.js',
       ReactDOMNext: '/react-dom.development.js',
-      ReactDOMServerNext: '/react-dom-server.browser.development.js',
+      ReactDOMServerNext: '/react-dom-server-legacy.browser.development.js',
     };
     const codePromises = Object.values(sources).map(src =>
       fetch(src).then(res => res.text())
@@ -866,14 +867,12 @@ class App extends React.Component {
     // Sort
     switch (sortOrder) {
       case ALPHABETICAL:
-        return filteredAttributes.sort(
-          (attr1, attr2) =>
-            attr1.name.toLowerCase() < attr2.name.toLowerCase() ? -1 : 1
+        return filteredAttributes.sort((attr1, attr2) =>
+          attr1.name.toLowerCase() < attr2.name.toLowerCase() ? -1 : 1
         );
       case REV_ALPHABETICAL:
-        return filteredAttributes.sort(
-          (attr1, attr2) =>
-            attr1.name.toLowerCase() < attr2.name.toLowerCase() ? 1 : -1
+        return filteredAttributes.sort((attr1, attr2) =>
+          attr1.name.toLowerCase() < attr2.name.toLowerCase() ? 1 : -1
         );
       case GROUPED_BY_ROW_PATTERN: {
         return filteredAttributes.sort((attr1, attr2) => {

@@ -27,7 +27,7 @@ describe('ReactPersistent', () => {
   function createPortal(children, containerInfo, implementation, key) {
     return {
       $$typeof: Symbol.for('react.portal'),
-      key: key == null ? null : '' + key,
+      key: key == null ? null : String(key),
       children,
       containerInfo,
       implementation,
@@ -39,8 +39,8 @@ describe('ReactPersistent', () => {
   }
 
   function div(...children) {
-    children = children.map(
-      c => (typeof c === 'string' ? {text: c, hidden: false} : c),
+    children = children.map(c =>
+      typeof c === 'string' ? {text: c, hidden: false} : c,
     );
     return {type: 'div', children, prop: undefined, hidden: false};
   }

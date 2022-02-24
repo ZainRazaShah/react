@@ -14,6 +14,7 @@ export type Rect = {
   right: number,
   top: number,
   width: number,
+  ...
 };
 
 // Get the window object for the document that a node belongs to,
@@ -49,7 +50,7 @@ export function getBoundingClientRectWithBorderOffset(node: HTMLElement) {
       right: dimensions.borderRight,
       // This width and height won't get used by mergeRectOffsets (since this
       // is not the first rect in the array), but we set them so that this
-      // object typechecks as a ClientRect.
+      // object type checks as a ClientRect.
       width: 0,
       height: 0,
     },

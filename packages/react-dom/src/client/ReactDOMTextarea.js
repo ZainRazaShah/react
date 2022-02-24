@@ -7,20 +7,19 @@
  * @flow
  */
 
-import invariant from 'shared/invariant';
+import isArray from 'shared/isArray';
 
-import ReactControlledValuePropTypes from '../shared/ReactControlledValuePropTypes';
+import {checkControlledValueProps} from '../shared/ReactControlledValuePropTypes';
 import {getCurrentFiberOwnerNameInDevOrNull} from 'react-reconciler/src/ReactCurrentFiber';
 import {getToStringValue, toString} from './ToStringValue';
 import type {ToStringValue} from './ToStringValue';
+import {disableTextareaChildren} from 'shared/ReactFeatureFlags';
 
 let didWarnValDefaultVal = false;
 
-type TextAreaWithWrapperState = HTMLTextAreaElement & {
-  _wrapperState: {
-    initialValue: ToStringValue,
-  },
-};
+type TextAreaWithWrapperState = HTMLTextAreaElement & {|
+  _wrapperState: {|initialValue: ToStringValue|},
+|};
 
 /**
  * Implements a <textarea> host component that allows setting `value`, and
@@ -40,10 +39,12 @@ type TextAreaWithWrapperState = HTMLTextAreaElement & {
 
 export function getHostProps(element: Element, props: Object) {
   const node = ((element: any): TextAreaWithWrapperState);
-  invariant(
-    props.dangerouslySetInnerHTML == null,
-    '`dangerouslySetInnerHTML` does not make sense on <textarea>.',
-  );
+
+  if (props.dangerouslySetInnerHTML != null) {
+    throw new Error(
+      '`dangerouslySetInnerHTML` does not make sense on <textarea>.',
+    );
+  }
 
   // Always set children to the same thing. In IE9, the selection range will
   // get reset if `textContent` is mutated.  We could add a check in setTextContent
@@ -64,7 +65,7 @@ export function getHostProps(element: Element, props: Object) {
 export function initWrapperState(element: Element, props: Object) {
   const node = ((element: any): TextAreaWithWrapperState);
   if (__DEV__) {
-    ReactControlledValuePropTypes.checkPropTypes('textarea', props);
+    checkControlledValueProps('textarea', props);
     if (
       props.value !== undefined &&
       props.defaultValue !== undefined &&
@@ -76,7 +77,7 @@ export function initWrapperState(element: Element, props: Object) {
           '(specify either the value prop, or the defaultValue prop, but not ' +
           'both). Decide between using a controlled or uncontrolled textarea ' +
           'and remove one of these props. More info: ' +
-          'https://fb.me/react-controlled-components',
+          'https://reactjs.org/link/controlled-components',
         getCurrentFiberOwnerNameInDevOrNull() || 'A component',
       );
       didWarnValDefaultVal = true;
@@ -87,9 +88,7 @@ export function initWrapperState(element: Element, props: Object) {
 
   // Only bother fetching default value if we're going to use it
   if (initialValue == null) {
-    let defaultValue = props.defaultValue;
-    // TODO (yungsters): Remove support for children content in <textarea>.
-    let children = props.children;
+    let {children, defaultValue} = props;
     if (children != null) {
       if (__DEV__) {
         console.error(
@@ -97,19 +96,23 @@ export function initWrapperState(element: Element, props: Object) {
             'children on <textarea>.',
         );
       }
-      invariant(
-        defaultValue == null,
-        'If you supply `defaultValue` on a <textarea>, do not pass children.',
-      );
-      if (Array.isArray(children)) {
-        invariant(
-          children.length <= 1,
-          '<textarea> can only have at most one child.',
-        );
-        children = children[0];
-      }
+      if (!disableTextareaChildren) {
+        if (defaultValue != null) {
+          throw new Error(
+            'If you supply `defaultValue` on a <textarea>, do not pass children.',
+          );
+        }
 
-      defaultValue = children;
+        if (isArray(children)) {
+          if (children.length > 1) {
+            throw new Error('<textarea> can only have at most one child.');
+          }
+
+          children = children[0];
+        }
+
+        defaultValue = children;
+      }
     }
     if (defaultValue == null) {
       defaultValue = '';

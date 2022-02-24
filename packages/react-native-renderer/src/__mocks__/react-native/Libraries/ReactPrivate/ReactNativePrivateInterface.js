@@ -38,4 +38,10 @@ module.exports = {
   get flattenStyle() {
     return require('./flattenStyle');
   },
+  get legacySendAccessibilityEvent() {
+    return require('./legacySendAccessibilityEvent');
+  },
+  get RawEventEmitter() {
+    return require('./RawEventEmitter').default;
+  },
 };

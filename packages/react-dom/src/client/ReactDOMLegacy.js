@@ -7,21 +7,18 @@
  * @flow
  */
 
-import type {DOMContainer} from './ReactDOM';
-import type {RootType} from './ReactDOMRoot';
+import type {Container} from './ReactDOMHostConfig';
+import type {FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
 import type {ReactNodeList} from 'shared/ReactTypes';
 
 import {
   getInstanceFromNode,
   isContainerMarkedAsRoot,
+  markContainerAsRoot,
   unmarkContainerAsRoot,
 } from './ReactDOMComponentTree';
-import {
-  createLegacyRoot,
-  isValidContainer,
-  warnOnInvalidCallback,
-} from './ReactDOMRoot';
-import {ROOT_ATTRIBUTE_NAME} from '../shared/DOMProperty';
+import {listenToAllSupportedEvents} from '../events/DOMPluginEventSystem';
+import {isValidContainerLegacy} from './ReactDOMRoot';
 import {
   DOCUMENT_NODE,
   ELEMENT_NODE,
@@ -29,28 +26,28 @@ import {
 } from '../shared/HTMLNodeType';
 
 import {
+  createContainer,
   findHostInstanceWithNoPortals,
   updateContainer,
-  unbatchedUpdates,
+  flushSync,
   getPublicRootInstance,
   findHostInstance,
   findHostInstanceWithWarning,
-} from 'react-reconciler/inline.dom';
-import getComponentName from 'shared/getComponentName';
-import invariant from 'shared/invariant';
+} from 'react-reconciler/src/ReactFiberReconciler';
+import {LegacyRoot} from 'react-reconciler/src/ReactRootTags';
+import getComponentNameFromType from 'shared/getComponentNameFromType';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {has as hasInstance} from 'shared/ReactInstanceMap';
 
 const ReactCurrentOwner = ReactSharedInternals.ReactCurrentOwner;
 
 let topLevelUpdateWarnings;
-let warnedAboutHydrateAPI = false;
 
 if (__DEV__) {
-  topLevelUpdateWarnings = (container: DOMContainer) => {
+  topLevelUpdateWarnings = (container: Container) => {
     if (container._reactRootContainer && container.nodeType !== COMMENT_NODE) {
       const hostInstance = findHostInstanceWithNoPortals(
-        container._reactRootContainer._internalRoot.current,
+        container._reactRootContainer.current,
       );
       if (hostInstance) {
         if (hostInstance.parentNode !== container) {
@@ -105,68 +102,60 @@ function getReactRootElementInContainer(container: any) {
   }
 }
 
-function shouldHydrateDueToLegacyHeuristic(container) {
-  const rootElement = getReactRootElementInContainer(container);
-  return !!(
-    rootElement &&
-    rootElement.nodeType === ELEMENT_NODE &&
-    rootElement.hasAttribute(ROOT_ATTRIBUTE_NAME)
-  );
+function noopOnRecoverableError() {
+  // This isn't reachable because onRecoverableError isn't called in the
+  // legacy API.
 }
 
 function legacyCreateRootFromDOMContainer(
-  container: DOMContainer,
+  container: Container,
   forceHydrate: boolean,
-): RootType {
-  const shouldHydrate =
-    forceHydrate || shouldHydrateDueToLegacyHeuristic(container);
+): FiberRoot {
   // First clear any existing content.
-  if (!shouldHydrate) {
-    let warned = false;
+  if (!forceHydrate) {
     let rootSibling;
     while ((rootSibling = container.lastChild)) {
-      if (__DEV__) {
-        if (
-          !warned &&
-          rootSibling.nodeType === ELEMENT_NODE &&
-          (rootSibling: any).hasAttribute(ROOT_ATTRIBUTE_NAME)
-        ) {
-          warned = true;
-          console.error(
-            'render(): Target node has markup rendered by React, but there ' +
-              'are unrelated nodes as well. This is most commonly caused by ' +
-              'white-space inserted around server-rendered markup.',
-          );
-        }
-      }
       container.removeChild(rootSibling);
     }
   }
+
+  const root = createContainer(
+    container,
+    LegacyRoot,
+    forceHydrate,
+    null, // hydrationCallbacks
+    false, // isStrictMode
+    false, // concurrentUpdatesByDefaultOverride,
+    '', // identifierPrefix
+    noopOnRecoverableError, // onRecoverableError
+    null, // transitionCallbacks
+  );
+  markContainerAsRoot(root.current, container);
+
+  const rootContainerElement =
+    container.nodeType === COMMENT_NODE ? container.parentNode : container;
+  listenToAllSupportedEvents(rootContainerElement);
+
+  return root;
+}
+
+function warnOnInvalidCallback(callback: mixed, callerName: string): void {
   if (__DEV__) {
-    if (shouldHydrate && !forceHydrate && !warnedAboutHydrateAPI) {
-      warnedAboutHydrateAPI = true;
-      console.warn(
-        'render(): Calling ReactDOM.render() to hydrate server-rendered markup ' +
-          'will stop working in React v17. Replace the ReactDOM.render() call ' +
-          'with ReactDOM.hydrate() if you want React to attach to the server HTML.',
+    if (callback !== null && typeof callback !== 'function') {
+      console.error(
+        '%s(...): Expected the last optional `callback` argument to be a ' +
+          'function. Instead received: %s.',
+        callerName,
+        callback,
       );
     }
   }
-
-  return createLegacyRoot(
-    container,
-    shouldHydrate
-      ? {
-          hydrate: true,
-        }
-      : undefined,
-  );
 }
 
 function legacyRenderSubtreeIntoContainer(
   parentComponent: ?React$Component<any, any>,
   children: ReactNodeList,
-  container: DOMContainer,
+  container: Container,
   forceHydrate: boolean,
   callback: ?Function,
 ) {
@@ -175,17 +164,15 @@ function legacyRenderSubtreeIntoContainer(
     warnOnInvalidCallback(callback === undefined ? null : callback, 'render');
   }
 
-  // TODO: Without `any` type, Flow says "Property cannot be accessed on any
-  // member of intersection type." Whyyyyyy.
-  let root: RootType = (container._reactRootContainer: any);
-  let fiberRoot;
+  let root = container._reactRootContainer;
+  let fiberRoot: FiberRoot;
   if (!root) {
     // Initial mount
     root = container._reactRootContainer = legacyCreateRootFromDOMContainer(
       container,
       forceHydrate,
     );
-    fiberRoot = root._internalRoot;
+    fiberRoot = root;
     if (typeof callback === 'function') {
       const originalCallback = callback;
       callback = function() {
@@ -194,11 +181,11 @@ function legacyRenderSubtreeIntoContainer(
       };
     }
     // Initial mount should not be batched.
-    unbatchedUpdates(() => {
+    flushSync(() => {
       updateContainer(children, fiberRoot, parentComponent, callback);
     });
   } else {
-    fiberRoot = root._internalRoot;
+    fiberRoot = root;
     if (typeof callback === 'function') {
       const originalCallback = callback;
       callback = function() {
@@ -216,7 +203,7 @@ export function findDOMNode(
   componentOrElement: Element | ?React$Component<any, any>,
 ): null | Element | Text {
   if (__DEV__) {
-    let owner = (ReactCurrentOwner.current: any);
+    const owner = (ReactCurrentOwner.current: any);
     if (owner !== null && owner.stateNode !== null) {
       const warnedAboutRefsInRender = owner.stateNode._warnedAboutRefsInRender;
       if (!warnedAboutRefsInRender) {
@@ -226,7 +213,7 @@ export function findDOMNode(
             'never access something that requires stale data from the previous ' +
             'render, such as refs. Move this logic to componentDidMount and ' +
             'componentDidUpdate instead.',
-          getComponentName(owner.type) || 'A component',
+          getComponentNameFromType(owner.type) || 'A component',
         );
       }
       owner.stateNode._warnedAboutRefsInRender = true;
@@ -246,13 +233,22 @@ export function findDOMNode(
 
 export function hydrate(
   element: React$Node,
-  container: DOMContainer,
+  container: Container,
   callback: ?Function,
 ) {
-  invariant(
-    isValidContainer(container),
-    'Target container is not a DOM element.',
-  );
+  if (__DEV__) {
+    console.error(
+      'ReactDOM.hydrate is no longer supported in React 18. Use hydrateRoot ' +
+        'instead. Until you switch to the new API, your app will behave as ' +
+        "if it's running React 17. Learn " +
+        'more: https://reactjs.org/link/switch-to-createroot',
+    );
+  }
+
+  if (!isValidContainerLegacy(container)) {
+    throw new Error('Target container is not a DOM element.');
+  }
+
   if (__DEV__) {
     const isModernRoot =
       isContainerMarkedAsRoot(container) &&
@@ -261,7 +257,7 @@ export function hydrate(
       console.error(
         'You are calling ReactDOM.hydrate() on a container that was previously ' +
           'passed to ReactDOM.createRoot(). This is not supported. ' +
-          'Did you mean to call createRoot(container, {hydrate: true}).render(element)?',
+          'Did you mean to call hydrateRoot(container, element)?',
       );
     }
   }
@@ -277,13 +273,22 @@ export function hydrate(
 
 export function render(
   element: React$Element<any>,
-  container: DOMContainer,
+  container: Container,
   callback: ?Function,
 ) {
-  invariant(
-    isValidContainer(container),
-    'Target container is not a DOM element.',
-  );
+  if (__DEV__) {
+    console.error(
+      'ReactDOM.render is no longer supported in React 18. Use createRoot ' +
+        'instead. Until you switch to the new API, your app will behave as ' +
+        "if it's running React 17. Learn " +
+        'more: https://reactjs.org/link/switch-to-createroot',
+    );
+  }
+
+  if (!isValidContainerLegacy(container)) {
+    throw new Error('Target container is not a DOM element.');
+  }
+
   if (__DEV__) {
     const isModernRoot =
       isContainerMarkedAsRoot(container) &&
@@ -308,17 +313,26 @@ export function render(
 export function unstable_renderSubtreeIntoContainer(
   parentComponent: React$Component<any, any>,
   element: React$Element<any>,
-  containerNode: DOMContainer,
+  containerNode: Container,
   callback: ?Function,
 ) {
-  invariant(
-    isValidContainer(containerNode),
-    'Target container is not a DOM element.',
-  );
-  invariant(
-    parentComponent != null && hasInstance(parentComponent),
-    'parentComponent must be a valid React Component',
-  );
+  if (__DEV__) {
+    console.error(
+      'ReactDOM.unstable_renderSubtreeIntoContainer() is no longer supported ' +
+        'in React 18. Consider using a portal instead. Until you switch to ' +
+        "the createRoot API, your app will behave as if it's running React " +
+        '17. Learn more: https://reactjs.org/link/switch-to-createroot',
+    );
+  }
+
+  if (!isValidContainerLegacy(containerNode)) {
+    throw new Error('Target container is not a DOM element.');
+  }
+
+  if (parentComponent == null || !hasInstance(parentComponent)) {
+    throw new Error('parentComponent must be a valid React Component');
+  }
+
   return legacyRenderSubtreeIntoContainer(
     parentComponent,
     element,
@@ -328,11 +342,12 @@ export function unstable_renderSubtreeIntoContainer(
   );
 }
 
-export function unmountComponentAtNode(container: DOMContainer) {
-  invariant(
-    isValidContainer(container),
-    'unmountComponentAtNode(...): Target container is not a DOM element.',
-  );
+export function unmountComponentAtNode(container: Container) {
+  if (!isValidContainerLegacy(container)) {
+    throw new Error(
+      'unmountComponentAtNode(...): Target container is not a DOM element.',
+    );
+  }
 
   if (__DEV__) {
     const isModernRoot =
@@ -359,8 +374,9 @@ export function unmountComponentAtNode(container: DOMContainer) {
     }
 
     // Unmount should not be batched.
-    unbatchedUpdates(() => {
+    flushSync(() => {
       legacyRenderSubtreeIntoContainer(null, null, container, false, () => {
+        // $FlowFixMe This should probably use `delete container._reactRootContainer`
         container._reactRootContainer = null;
         unmarkContainerAsRoot(container);
       });
@@ -376,7 +392,7 @@ export function unmountComponentAtNode(container: DOMContainer) {
       // Check if the container itself is a React root node.
       const isContainerReactRoot =
         container.nodeType === ELEMENT_NODE &&
-        isValidContainer(container.parentNode) &&
+        isValidContainerLegacy(container.parentNode) &&
         !!container.parentNode._reactRootContainer;
 
       if (hasNonRootReactChild) {
@@ -385,9 +401,9 @@ export function unmountComponentAtNode(container: DOMContainer) {
             'was rendered by React and is not a top-level container. %s',
           isContainerReactRoot
             ? 'You may have accidentally passed in a React root node instead ' +
-              'of its container.'
+                'of its container.'
             : 'Instead, have the parent component update its state and ' +
-              'rerender in order to remove this component.',
+                'rerender in order to remove this component.',
         );
       }
     }
